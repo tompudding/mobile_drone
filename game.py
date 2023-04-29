@@ -312,6 +312,7 @@ class Drone(object):
         self.size = parent.atlas.subimage(self.sprite_name).size
         self.bottom_left = pos
         self.top_right = pos + self.size
+        self.turning_enabled = True
 
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
@@ -353,6 +354,17 @@ class Drone(object):
         self.target_rotation = 0
         self.engine = True
 
+    def disable_turning(self):
+        self.turning_enabled = False
+        self.update_desired_vector()
+        self.desired_shift[0] = 0
+        self.desired_pos = (0, self.desired_pos[1])
+        print("YO")
+
+    def enable_turning(self):
+        self.turning_enabled = True
+        self.update_desired_vector()
+
     def update(self):
         if self.last_update is None:
             self.last_update = globals.time
@@ -390,6 +402,9 @@ class Drone(object):
             self.desired_pos - Point(4, 4), self.desired_pos + Point(4, 4), drone_level + 1
         )
         self.reset_forces()
+
+        if not self.turning_enabled and self.body.position[1] > 100:
+            self.enable_turning()
 
     def calculate_forces(self):
         if not self.engine:
@@ -457,7 +472,10 @@ class Drone(object):
 
         for direction in Directions:
             if self.desired_field & direction:
-                self.desired_vector += self.vectors[direction]
+                vector = self.vectors[direction]
+                if not self.turning_enabled:
+                    vector.x = 0
+                self.desired_vector += vector
 
     def key_down(self, key):
         try:
@@ -1001,11 +1019,12 @@ class GameView(ui.RootElement):
         self.level_text = None
         # self.sub_text = None
 
-        # self.bottom_handler = globals.space.add_collision_handler(CollisionTypes.BALL, CollisionTypes.BOTTOM)
+        self.bottom_handler = globals.space.add_collision_handler(CollisionTypes.DRONE, CollisionTypes.BOTTOM)
         # self.box_handler = globals.space.add_collision_handler(CollisionTypes.BALL, CollisionTypes.BOX)
         # self.cup_handler = globals.space.add_collision_handler(CollisionTypes.BALL, CollisionTypes.CUP)
 
-        # self.bottom_handler.begin = self.bottom_hit
+        self.bottom_handler.begin = self.bottom_collision_start
+        self.bottom_handler.separate = self.bottom_collision_end
         # self.box_handler.begin = self.box_hit
         # self.cup_handler.begin = self.cup_hit
         # # self.cup_handler.separate = self.cup_sep
@@ -1046,6 +1065,14 @@ class GameView(ui.RootElement):
         # self.init_level()
         # self.cup.disable()
         # self.ball.disable()
+
+    def bottom_collision_start(self, arbiter, space, data):
+        # self.drone.disable_turning()
+        return True
+
+    def bottom_collision_end(self, arbiter, space, data):
+        # print("BCE")
+        return True
 
     def quit(self, pos):
         raise SystemExit()
