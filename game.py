@@ -8,27 +8,36 @@ import math
 import pygame
 import traceback
 import random
+import enum
 
 box_level = 7
 ground_level = 6
-ball_level = 8
+drone_level = 8
 sf = 1
+debug_sprite_name = "resource/sprites/box.png"
 
 
 def to_world_coords(p):
-    return p * sf
+    return p / globals.scale
 
 
 def to_screen_coords(p):
-    return p / sf
+    return p * globals.scale
 
 
 class CollisionTypes:
-    BALL = 1
+    DRONE = 1
     BOTTOM = 2
     BOX = 3
     WALL = 4
     CUP = 5
+
+
+class Directions(enum.IntFlag):
+    UP = enum.auto()
+    DOWN = enum.auto()
+    LEFT = enum.auto()
+    RIGHT = enum.auto()
 
 
 class ViewPos(object):
@@ -157,9 +166,11 @@ class Ground(object):
         pos = self.bottom_left
         self.quads = []
 
+        quad_size = Point(subimage.size.x, self.height)
+
         while pos.x < self.top_right.x:
             quad = drawing.Quad(globals.quad_buffer, tc=tc)
-            quad.set_vertices(pos, pos + subimage.size, ground_level)
+            quad.set_vertices(pos, pos + quad_size, ground_level)
             self.quads.append(quad)
 
             pos.x += subimage.size.x
@@ -183,42 +194,125 @@ class Ground(object):
         globals.space.remove(self.segment)
 
 
-class Ball(object):
-    def __init__(self, parent, pos, radius):
+class Drone(object):
+    sprite_name = "resource/sprites/drone.png"
+    up_keys = {pygame.locals.K_w, pygame.locals.K_UP}
+    down_keys = {pygame.locals.K_s, pygame.locals.K_DOWN}
+    left_keys = {pygame.locals.K_a, pygame.locals.K_LEFT}
+    right_keys = {pygame.locals.K_d, pygame.locals.K_RIGHT}
+    key_map = (
+        {key: Directions.UP for key in up_keys}
+        | {key: Directions.DOWN for key in down_keys}
+        | {key: Directions.LEFT for key in left_keys}
+        | {key: Directions.RIGHT for key in right_keys}
+    )
+    vectors = {
+        Directions.UP: Point(0, 1),
+        Directions.DOWN: Point(0, -1),
+        Directions.LEFT: Point(-1, 0),
+        Directions.RIGHT: Point(1, 0),
+    }
+    desired_speed = 50
+    max_desired = 20
+
+    def __init__(self, parent, pos):
         self.parent = parent
         self.quad = drawing.Quad(globals.quad_buffer)
-        self.quad.set_texture_coordinates(parent.atlas.texture_coords("resource/sprites/ball.png"))
-        self.centre = pos
+        self.quad.set_texture_coordinates(parent.atlas.texture_coords(self.sprite_name))
 
-        # We need some vertices for our quad
-        l = radius
-        self.vertices = [Point(-l, -l), Point(-l, l), Point(l, l), Point(l, -l)]
-        self.quad.set_vertices(self.vertices[0] + self.centre, self.vertices[2] + self.centre, ball_level)
+        self.size = parent.atlas.subimage(self.sprite_name).size
+        self.bottom_left = pos
+        self.top_right = pos + self.size
 
-        mass = 0.1
-        self.moment = pymunk.moment_for_circle(mass, 0, radius)
-        self.body = Body(mass=mass, moment=self.moment)
+        self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
+
+        centre = self.quad.get_centre()
+        vertices = [tuple(Point(*v[:2]) - centre) for v in self.quad.vertex[:4]]
+
+        self.mass = 0.1
+        self.moment = pymunk.moment_for_poly(self.mass, vertices)
+        self.body = Body(mass=self.mass, moment=self.moment)
         self.body.position = to_world_coords(self.quad.get_centre().to_float())
         self.body.force = 0, 0
         self.body.torque = 0
         self.body.velocity = 0, 0
         self.body.angular_velocity = 0
         # print(self.body.position,self.body.velocity)
-        self.shape = pymunk.Circle(self.body, radius)
+        self.shape = pymunk.Poly(self.body, vertices)
         self.shape.friction = 0.5
-        self.shape.elasticity = 0.95
-        self.shape.collision_type = CollisionTypes.BALL
+        self.shape.elasticity = 0.8
+        self.shape.collision_type = CollisionTypes.DRONE
         globals.space.add(self.body, self.shape)
-        self.polar_vertices = [cmath.polar(v[0] + v[1] * 1j) for v in self.vertices]
+        # self.polar_vertices = [cmath.polar(v[0] + v[1] * 1j) for v in self.vertices]
+
+        # For debugging we'll draw a box around the desired pos
+        self.desired_quad = drawing.Quad(
+            globals.quad_buffer, tc=parent.atlas.texture_coords(debug_sprite_name)
+        )
+
+        self.desired_shift = Point(0, 0)
+        self.desired_pos = self.body.position
+        self.desired_field = 0
+        self.desired_vector = Point(0, 0)
+        self.last_update = None
 
     def update(self):
-        # Don't worry about rotation for now, the sprite is symetrical. We could fix this though
-        self.centre = self.body.position
-        final_vertices = []
-        for r, a in self.polar_vertices:
-            c = cmath.rect(r, a + self.body.angle)
-            final_vertices.append(Point(c.real, c.imag) + self.centre)
-        self.quad.set_all_vertices(final_vertices, ball_level)
+        if self.last_update is None:
+            self.last_update = globals.time
+            return
+
+        vertices = [0, 0, 0, 0]
+        for i, v in enumerate(self.shape.get_vertices()):
+            vertices[(4 - i) & 3] = v.rotated(self.body.angle) + self.body.position
+
+        self.quad.set_all_vertices(vertices, box_level)
+
+        elapsed = (globals.time - self.last_update) * globals.time_step
+        self.last_update = globals.time
+
+        self.desired_shift += self.desired_vector * self.desired_speed * (elapsed / 1000)
+        desired_length = self.desired_shift.length()
+        if self.desired_shift.length() > self.max_desired:
+            scale_factor = self.max_desired / desired_length
+            self.desired_shift *= scale_factor
+        self.desired_pos = self.body.position + self.desired_shift
+        self.desired_quad.set_vertices(
+            self.desired_pos - Point(4, 4), self.desired_pos + Point(4, 4), drone_level + 1
+        )
+
+        # The drone is clever and will set the downward force of its two jets in order to get to the desired position.
+        # In practice this is quite complicated. Hmm. Let's just do vertical for now
+
+        # self.centre = self.body.position
+        # final_vertices = []
+        # for r, a in self.polar_vertices:
+        #     c = cmath.rect(r, a + self.body.angle)
+        #     final_vertices.append(Point(c.real, c.imag) + self.centre)
+        # self.quad.set_all_vertices(final_vertices, ball_level)
+
+    def update_desired_vector(self):
+        self.desired_vector = Point(0, 0)
+        for direction in Directions:
+            if self.desired_field & direction:
+                self.desired_vector += self.vectors[direction]
+
+    def key_down(self, key):
+        try:
+            direction = self.key_map[key]
+        except KeyError:
+            return
+
+        self.desired_field |= direction
+        self.update_desired_vector()
+
+    def key_up(self, key):
+        try:
+            direction = self.key_map[key]
+        except KeyError:
+            return
+
+        self.desired_field &= ~direction
+        self.update_desired_vector()
 
     def disable(self):
         self.quad.disable()
@@ -548,6 +642,7 @@ class LevelZero(Level):
     text = "Deliver Stuff"
     name = "Introduction"
     subtext = "idk lol"
+    start_pos = Point(0, 350)
     items = []
     min_distance = 200
     min_force = 50
@@ -713,6 +808,8 @@ class GameView(ui.RootElement):
         self.light.set_vertices(Point(0, 0), globals.screen - Point(0, 0), 0)
 
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
+        self.ground = None
+        self.drone = None
 
         # self.boxes = []
         # self.boxes.append(Box(self, Point(100,100), Point(200,200)))
@@ -826,7 +923,13 @@ class GameView(ui.RootElement):
             # jim += 1
             self.boxes.append(box)
 
+        if self.ground:
+            self.ground.delete()
+
+        if self.drone:
+            self.drone.delete()
         self.ground = Ground(self, level.ground_height)
+        self.drone = Drone(self, level.start_pos)
         # self.cup.enable()
         # self.ball.enable()
         # self.old_line.disable()
@@ -929,6 +1032,8 @@ class GameView(ui.RootElement):
             # shifts count as the right button
             self.mouse_button_down(globals.mouse_screen, 3)
 
+        if self.drone:
+            self.drone.key_down(key)
         # This makes it super easy
         # elif key == pygame.locals.K_r and self.last_throw:
         #    self.throw_ball(*self.last_throw)
@@ -941,6 +1046,9 @@ class GameView(ui.RootElement):
         elif key in (pygame.locals.K_RSHIFT, pygame.locals.K_LSHIFT):
             # shifts count as the right button
             self.mouse_button_up(globals.mouse_screen, 3)
+
+        if self.drone:
+            self.drone.key_up(key)
 
     def update(self, t):
         # for box in self.boxes:
@@ -970,7 +1078,7 @@ class GameView(ui.RootElement):
         # self.ball.body.position = globals.mouse_screen
         # self.ball.set_pos(globals.mouse_pos)
 
-        # self.ball.update()
+        self.drone.update()
 
         # if self.thrown:
         #     diff = self.ball.body.position - self.last_ball_pos
@@ -983,7 +1091,7 @@ class GameView(ui.RootElement):
         #         self.dots += 1
         #         self.last_ball_pos = self.ball.body.position
 
-        globals.mouse_world = self.viewpos.pos + (self.mouse_pos / globals.scale)
+        globals.mouse_world = self.viewpos.pos + to_world_coords(self.mouse_pos)
 
     def draw(self):
         # drawing.draw_no_texture(globals.ui_buffer)

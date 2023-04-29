@@ -36,6 +36,7 @@ def init():
     globals.scale = Point(2, 2)
     globals.screen_root = ui.UIRoot(Point(0, 0), globals.screen)
     globals.ui_state = ui.UIState()
+    globals.time_step = 1
 
     # Light stuff
     globals.shadow_lights = []
@@ -151,7 +152,7 @@ def main_run():
             print("FPS:", fps)
             last = t
 
-        globals.t = t
+        globals.t = globals.time = t
         if fps == 0:
             fps = 50
         iterations = 25

@@ -25,9 +25,9 @@ void main()
     vec2 lp = light_pos/screen_dimensions.xy;
     vec2 tc = CalcTexCoord();
 
-    for(float y=0.0; y < 128; y += 1.0) {
+    for(float y=0.0; y < 512; y += 1.0) {
         float theta = ((gl_FragCoord.x*2.0)/sb_dimensions.x)-1;
-        float r = y/128;
+        float r = y/512;
         theta = PI*1.5 + theta*PI;
 
         vec2 coord = vec2(-r * sin(theta), -r * cos(theta));
