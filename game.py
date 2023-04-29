@@ -202,6 +202,8 @@ class Box(object):
         self.shape.parent = self
         globals.space.add(self.body, self.shape)
         self.in_world = True
+        # Our anchors are the top left and top right
+        self.anchor_points = [point * 0.9 for point in self.shape.get_vertices()[2:]][::-1]
 
     def update(self):
         vertices = [0, 0, 0, 0]
@@ -363,7 +365,7 @@ class Drone(object):
     desired_speed = 50
     max_desired = 20
     min_desired = 3
-    grab_range = 50
+    grab_range = 30
 
     def __init__(self, parent, pos):
         self.parent = parent
@@ -418,6 +420,9 @@ class Drone(object):
         self.target_rotation = 0
         self.engine = True
         self.anchors = []
+        # Our anchor points are our bottom left and our bottom right
+
+        self.anchor_points = [jet * 0.9 for jet in self.jets]
 
     def disable_turning(self):
         self.turning_enabled = False
@@ -431,23 +436,35 @@ class Drone(object):
 
     def grab(self, item):
         self.grabbed = item
-        self.joint = pymunk.SlideJoint(
-            self.body, item.body, anchor_a=(0, 0), anchor_b=(0, 0), min=0, max=self.grab_range
-        )
-        globals.space.add(self.joint)
         self.anchors = []
-        self.anchors.append(Line(self, self.body.position, item.body.position, colour=(1, 1, 1, 1)))
+        self.joints = []
+        for our_anchor, item_anchor in zip(self.anchor_points, item.anchor_points):
+            print(f"{our_anchor=} {item_anchor=}")
+            joint = pymunk.SlideJoint(
+                self.body, item.body, anchor_a=our_anchor, anchor_b=item_anchor, min=0, max=self.grab_range
+            )
+            self.joints.append(joint)
+            globals.space.add(joint)
+            self.anchors.append(
+                Line(
+                    self,
+                    self.body.local_to_world(our_anchor),
+                    item.body.local_to_world(item_anchor),
+                    colour=(1, 1, 1, 1),
+                )
+            )
 
     def release(self):
         if not self.grabbed:
             return
-
-        globals.space.remove(self.joint)
+        for joint in self.joints:
+            globals.space.remove(joint)
         for anchor in self.anchors:
             anchor.delete()
+
         self.anchors = []
         self.grabbed = None
-        self.joint = None
+        self.joints = []
 
     def enable_turning(self):
         self.turning_enabled = True
@@ -494,8 +511,13 @@ class Drone(object):
         if not self.turning_enabled and self.body.position[1] > 100:
             self.enable_turning()
 
-        for anchor in self.anchors:
-            anchor.set(self.body.position, self.grabbed.body.position)
+        if self.grabbed:
+            for our_anchor, item_anchor, anchor in zip(
+                self.anchor_points, self.grabbed.anchor_points, self.anchors
+            ):
+                anchor.set(
+                    self.body.local_to_world(our_anchor), self.grabbed.body.local_to_world(item_anchor)
+                )
 
     def calculate_forces(self):
         if not self.engine:
