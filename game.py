@@ -205,9 +205,28 @@ class Box(object):
         self.shape.parent = self
         globals.space.add(self.body, self.shape)
         self.in_world = True
-        # Our anchors are the top left and top right
-        self.anchor_points = [point * 0.9 for point in self.shape.get_vertices()[2:]][::-1]
+        # Our anchors are the top left and top right.
+        # TODO: These should actually be the two that are most upright (if it flips things go wrong)
+        # self.anchor_points = [point * 0.9 for point in self.shape.get_vertices()[2:]][::-1]
         self.on_receiver = None
+
+    def anchor_points(self):
+        orig_vertices = self.shape.get_vertices()
+        vertices = [0, 0, 0, 0]
+        for i, v in enumerate(orig_vertices):
+            vertices[i] = (i, v.rotated(self.body.angle) + self.body.position)
+
+        # We want the one that's most left and most up, and the one that's most right and most up
+        vertices.sort(key=lambda x: -x[1][1])
+        print(vertices)
+        output = [orig_vertices[vertices[0][0]], orig_vertices[vertices[1][0]]]
+        output = [p * 0.8 for p in output]
+
+        if vertices[0][1][0] < vertices[1][1][0]:
+            self._anchor_points = output
+        else:
+            self._anchor_points = output[::-1]
+        return self._anchor_points
 
     def mark_on_receiver(self, on_receiver):
         if not on_receiver:
@@ -235,7 +254,8 @@ class Box(object):
 
 
 class Receiver(object):
-    sprite_name = "resource/sprites/box.png"
+    sprite_name = "resource/sprites/receiver.png"
+    name_name = "resource/sprites/receiver_%d.png"
     mass = 0.01
     density = 12 / 100000
     is_package = False
@@ -251,6 +271,15 @@ class Receiver(object):
         self.quad.set_vertices(bl, tr, box_level)
         self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
         self.quad.set_texture_coordinates(self.normal_tc)
+
+        name_bl = bl - Point(0, 10)
+        name_tr = name_bl + Point(40, 10)
+        self.name_quad = drawing.Quad(globals.quad_buffer)
+
+        self.name_quad.set_vertices(name_bl, name_tr, box_level)
+        self.name_tc = parent.atlas.texture_coords(self.name_name % self.id)
+        self.name_quad.set_texture_coordinates(self.name_tc)
+
         self.collision_impulse = Point(0, 0)
 
         centre = self.quad.get_centre()
@@ -285,6 +314,7 @@ class Receiver(object):
         self.quad.delete()
         globals.space.remove(self.body, self.shape)
         self.in_world = False
+        self.name_quad.delete()
 
 
 class Ground(object):
@@ -382,7 +412,7 @@ class Drone(object):
     desired_speed = 50
     max_desired = 20
     min_desired = 3
-    grab_range = 30
+    grab_range = 20
 
     def __init__(self, parent, pos):
         self.parent = parent
@@ -455,11 +485,9 @@ class Drone(object):
         self.grabbed = item
         self.anchors = []
         self.joints = []
-        for our_anchor, item_anchor in zip(self.anchor_points, item.anchor_points):
+        for our_anchor, item_anchor in zip(self.anchor_points, item.anchor_points()):
             print(f"{our_anchor=} {item_anchor=}")
-            joint = pymunk.SlideJoint(
-                self.body, item.body, anchor_a=our_anchor, anchor_b=item_anchor, min=0, max=self.grab_range
-            )
+            joint = pymunk.PinJoint(self.body, item.body, anchor_a=our_anchor, anchor_b=item_anchor)
             self.joints.append(joint)
             globals.space.add(joint)
             self.anchors.append(
@@ -470,6 +498,10 @@ class Drone(object):
                     colour=(1, 1, 1, 1),
                 )
             )
+        # We also add an unseen stabilization joint
+        stable = pymunk.PinJoint(self.body, item.body)
+        self.joints.append(stable)
+        globals.space.add(stable)
 
     def release(self):
         if not self.grabbed:
@@ -530,7 +562,7 @@ class Drone(object):
 
         if self.grabbed:
             for our_anchor, item_anchor, anchor in zip(
-                self.anchor_points, self.grabbed.anchor_points, self.anchors
+                self.anchor_points, self.grabbed._anchor_points, self.anchors
             ):
                 anchor.set(
                     self.body.local_to_world(our_anchor), self.grabbed.body.local_to_world(item_anchor)
@@ -587,6 +619,7 @@ class Drone(object):
         anti_grav *= 2
         force = (0, (anti_grav + desired)[1])
         self.force = (desired[0], (anti_grav + desired)[1])
+        # print(f"{force=}")
 
     def reset_forces(self):
         self.forces = None
@@ -807,26 +840,26 @@ class MainMenu(ui.HoverableBox):
         # self.continue_button = ui.TextBoxButton(self, 'Next Level', Point(0.7, 0.1), size=2, callback=self.next_level)
 
         pos = Point(0.2, 0.8)
-        # for i, level in enumerate(parent.levels):
-        #     button = ui.TextBoxButton(
-        #         self,
-        #         f"{i}: {level.name}",
-        #         pos,
-        #         size=2,
-        #         callback=call_with(self.start_level, i),
-        #     )
-        #     self.ticks.append(
-        #         ui.TextBox(
-        #             self,
-        #             pos - Point(0.05, 0.01),
-        #             tr=pos + Point(0.1, 0.04),
-        #             text="\x9a",
-        #             scale=3,
-        #             colour=(0, 1, 0, 1),
-        #         )
-        #     )
-        #     if not self.parent.done[i]:
-        #         self.ticks[i].disable()
+        for i, level in enumerate(parent.levels):
+            button = ui.TextBoxButton(
+                self,
+                f"{i}: {level.name}",
+                pos,
+                size=2,
+                callback=call_with(self.start_level, i),
+            )
+            # self.ticks.append(
+            #     ui.TextBox(
+            #         self,
+            #         pos - Point(0.05, 0.01),
+            #         tr=pos + Point(0.1, 0.04),
+            #         text="\x9a",
+            #         scale=3,
+            #         colour=(0, 1, 0, 1),
+            #     )
+            # )
+            # if not self.parent.done[i]:
+            #     self.ticks[i].disable()
 
         #     pos.y -= 0.1
         #     self.level_buttons.append(button)
@@ -870,7 +903,7 @@ class GameOver(ui.HoverableBox):
             self,
             Point(0, 0.5),
             Point(1, 0.6),
-            "You Kept the Streak Alive! Amazing!",
+            "There are no more packages. Rest little one",
             2,
             colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.CENTRE,
@@ -878,11 +911,13 @@ class GameOver(ui.HoverableBox):
         self.border.set_colour(drawing.constants.colours.red)
         self.border.set_vertices(self.absolute.bottom_left, self.absolute.top_right)
         self.border.enable()
-        self.replay_button = ui.TextBoxButton(self, "Replay", Point(0.1, 0.1), size=2, callback=self.replay)
+        self.replay_button = ui.TextBoxButton(
+            self, "Keep Flying", Point(0.1, 0.1), size=2, callback=self.keep_flying
+        )
         self.quit_button = ui.TextBoxButton(self, "Quit", Point(0.7, 0.1), size=2, callback=parent.quit)
 
-    def replay(self, pos):
-        self.parent.replay()
+    def keep_flying(self, pos):
+        self.parent.keep_flying()
         self.disable()
 
     def enable(self):
@@ -910,8 +945,8 @@ class LevelZero(Level):
     text = "Deliver Stuff"
     name = "Introduction"
     subtext = "idk lol"
-    start_pos = Point(100, 50)
-    items = [(Point(20, 20), 0)]
+    start_pos = Point(100 + 5000, 50)
+    items = [(Point(20, 20), 0), (Point(40, 40), 1), (Point(50, 10), 2), (Point(50, 50), 3)]
     receivers = [800 + i * 600 for i in range(10)]
     min_distance = 200
     min_force = 50
@@ -1169,7 +1204,6 @@ class GameView(ui.RootElement):
         return True
 
     def receiver_start(self, arbiter, space, data):
-
         ids = [shape.parent for shape in arbiter.shapes]
         if ids[0].id != ids[1].id:
             return True
@@ -1248,14 +1282,16 @@ class GameView(ui.RootElement):
         for i, pos in enumerate(level.receivers):
             self.receivers.append(Receiver(self, pos, id=i))
 
-        for size, target in level.items:
-            bl = Point(50, 0)
+        size, target = level.items.pop(0)
+        print("PACKAGE with target", target)
 
-            package = Box(self, bl, bl + size, target=target)
-            # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
-            package.update()
-            # jim += 1
-            self.packages.append(package)
+        bl = Point(5050 + random.randint(-20, 20), 0)
+
+        package = Box(self, bl, bl + size, target=target)
+        # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
+        package.update()
+        # jim += 1
+        self.packages.append(package)
 
         # if self.ground:
         #    self.ground.delete()
@@ -1285,6 +1321,23 @@ class GameView(ui.RootElement):
         print("Package delivered!")
         self.packages = [package for package in self.packages if package is not delivered_package]
         delivered_package.delete()
+
+        level = self.levels[self.current_level]
+
+        if len(level.items) == 0:
+            self.end_game()
+            return
+
+        size, target = level.items.pop(0)
+        print("PACKAGE with target", target)
+
+        bl = Point(50 + random.randint(-20, 20), 0)
+
+        package = Box(self, bl, bl + size, target=target)
+        # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
+        package.update()
+        # jim += 1
+        self.packages.append(package)
 
     def end_game(self):
         self.game_over = GameOver(self, Point(0.2, 0.2), Point(0.8, 0.8))
@@ -1326,12 +1379,29 @@ class GameView(ui.RootElement):
                 shape.parent.set_touched(self.levels[self.current_level].disappear)
         return True
 
-    def replay(self):
+    def keep_flying(self):
         self.paused = False
-        self.boop = 0
-        self.throw_ball(*self.last_throw)
-        for box in self.boxes:
-            box.reset_touched(self.levels[self.current_level].disappear)
+        # We'll add a bunch of boxes to the level
+        level = self.levels[self.current_level]
+
+        level.items = [
+            (
+                Point(15 + random.randint(1, 20), 15 + random.randint(1, 20)),
+                random.randint(0, len(self.receivers) - 1),
+            )
+            for i in range(100)
+        ]
+
+        size, target = level.items.pop(0)
+
+        bl = Point(50 + random.randint(-20, 20), 0)
+
+        package = Box(self, bl, bl + size, target=target)
+        print("PACKAGE with target", target, "size", size)
+        # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
+        package.update()
+        # jim += 1
+        self.packages.append(package)
 
     def next_level(self):
         self.stop_throw()
@@ -1395,8 +1465,8 @@ class GameView(ui.RootElement):
         #    box.update()
         if self.paused:
             # Hack, skip the main menu
-            self.main_menu.disable()
-            self.main_menu.start_level(0, 0)
+            # self.main_menu.disable()
+            # self.main_menu.start_level(0, 0)
             return
 
         if self.text_fade == False and self.start_level and globals.t - self.start_level > 5000:

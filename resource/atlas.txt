@@ -1,3 +1,15 @@
 resource/sprites/ground.png:resource/atlas_0.png:0:896.0:128:128
 resource/sprites/box.png:resource/atlas_0.png:128:896.0:128:128
 resource/sprites/drone.png:resource/atlas_0.png:256:1008.0:32:16
+resource/sprites/receiver_10.png:resource/atlas_0.png:288:1014.0:40:10
+resource/sprites/receiver_7.png:resource/atlas_0.png:328:1014.0:40:10
+resource/sprites/receiver.png:resource/atlas_0.png:368:1014.0:40:10
+resource/sprites/receiver_4.png:resource/atlas_0.png:408:1014.0:40:10
+resource/sprites/receiver_5.png:resource/atlas_0.png:448:1014.0:40:10
+resource/sprites/receiver_3.png:resource/atlas_0.png:488:1014.0:40:10
+resource/sprites/receiver_1.png:resource/atlas_0.png:528:1014.0:40:10
+resource/sprites/receiver_8.png:resource/atlas_0.png:568:1014.0:40:10
+resource/sprites/receiver_9.png:resource/atlas_0.png:608:1014.0:40:10
+resource/sprites/receiver_0.png:resource/atlas_0.png:648:1014.0:40:10
+resource/sprites/receiver_2.png:resource/atlas_0.png:688:1014.0:40:10
+resource/sprites/receiver_6.png:resource/atlas_0.png:728:1014.0:40:10
