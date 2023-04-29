@@ -41,42 +41,130 @@ class Directions(enum.IntFlag):
 
 
 class ViewPos(object):
+    follow_threshold = 0
+    max_away = Point(100, 20)
     shake_radius = 10
 
-    def __init__(self, pos):
-        self.pos = pos
+    def __init__(self, point):
+        self._pos = point
+        self.no_target()
+        self.follow = None
+        self.follow_locked = False
+        self.t = 0
         self.shake_end = None
         self.shake_duration = 1
         self.shake = Point(0, 0)
-        self.last_update = None
+        self.last_update = globals.time
 
-    def screen_shake(self, radius, duration):
-        self.shake_end = globals.time + duration
-        self.shake_radius = radius
-        self.shake_duration = float(duration)
-
-    def reset(self):
-        self.shake_end = None
+    def no_target(self):
+        self.target = None
+        self.target_change = None
+        self.start_point = None
+        self.target_time = None
+        self.start_time = None
 
     @property
-    def full_pos(self):
-        return self.pos + self.shake
+    def pos(self):
+        return self._pos + self.shake
+
+    def set(self, point):
+        self._pos = point.to_int()
+        self.no_target()
+
+    def screen_shake(self, duration):
+        self.shake_end = globals.time + duration
+        self.shake_duration = float(duration)
+
+    def set_target(self, point, rate=2, callback=None):
+        # Don't fuck with the view if the player is trying to control it
+        rate /= 4.0
+        self.follow = None
+        self.follow_start = 0
+        self.follow_locked = False
+        self.target = point.to_int()
+        self.target_change = self.target - self._pos
+        self.start_point = self._pos
+        self.start_time = globals.time
+        self.duration = self.target_change.length() / rate
+        self.callback = callback
+        if self.duration < 200:
+            self.duration = 200
+        self.target_time = self.start_time + self.duration
+
+    def set_follow_target(self, actor):
+        """
+        Follow the given actor around.
+        """
+        self.follow = actor
+        self.follow_start = globals.time
+        self.follow_locked = False
+
+    def has_target(self):
+        return self.target is not None
+
+    def skip(self):
+        self._pos = self.target
+        self.no_target()
+        if self.callback:
+            self.callback(self.t)
+            self.callback = None
 
     def update(self):
-        if self.last_update is None:
-            self.last_update = globals.time
-            return
-        elapsed = (globals.time - self.last_update) * globals.time_step
+        try:
+            return self.update()
+        finally:
+            self._pos = self._pos.to_int()
+
+    def update(
+        self,
+    ):
+        self.t = globals.time
+        elapsed = globals.time - self.last_update
         self.last_update = globals.time
+        t = globals.time
 
         if self.shake_end:
             if globals.time >= self.shake_end:
                 self.shake_end = None
                 self.shake = Point(0, 0)
             else:
-                left = (self.shake_end - globals.time) / self.shake_duration
+                left = (self.shake_end - t) / self.shake_duration
                 radius = left * self.shake_radius
                 self.shake = Point(random.random() * radius, random.random() * radius)
+
+        if self.follow:
+            # We haven't locked onto it yet, so move closer, and lock on if it's below the threshold
+            fpos = self.follow.body.position + globals.screen * Point(0, 0.03)
+            if not fpos:
+                return
+            target = fpos - (globals.screen / globals.scale) * 0.5
+            diff = Point(*(target - self._pos))
+            # print diff.SquareLength(),self.follow_threshold
+            direction = diff.direction()
+
+            if abs(diff.x) < self.max_away.x and abs(diff.y) < self.max_away.y:
+                adjust = diff * 0.02 * elapsed * 0.06
+            else:
+                adjust = diff * 0.03 * elapsed * 0.06
+            # adjust = adjust.to_int()
+            if adjust.x == 0 and adjust.y == 0:
+                adjust = direction
+            self._pos += adjust
+            return
+
+        elif self.target:
+            if t >= self.target_time:
+                self._pos = self.target
+                self.no_target()
+                if self.callback:
+                    self.callback(t)
+                    self.callback = None
+            elif t < self.start_time:  # I don't think we should get this
+                return
+            else:
+                partial = float(t - self.start_time) / self.duration
+                partial = partial * partial * (3 - 2 * partial)  # smoothstep
+                self._pos = (self.start_point + (self.target_change * partial)).to_int()
 
 
 class Box(object):
@@ -263,6 +351,7 @@ class Drone(object):
         self.jets = self.shape.get_vertices()[:2]
         self.reset_forces()
         self.target_rotation = 0
+        self.engine = True
 
     def update(self):
         if self.last_update is None:
@@ -303,6 +392,9 @@ class Drone(object):
         self.reset_forces()
 
     def calculate_forces(self):
+        if not self.engine:
+            self.forces = ((0, 0), (0, 0))
+            return
         anti_grav = -globals.space.gravity * self.body.mass * 0.5
         desired = self.desired_shift - self.body.velocity * 0.1
 
@@ -345,6 +437,8 @@ class Drone(object):
     def apply_forces(self):
         if self.force is None:
             self.calculate_forces()
+        if not self.engine:
+            return
 
         self.body.apply_force_at_world_point(self.force, (0, 0))
         elapsed = globals.dt
@@ -375,6 +469,8 @@ class Drone(object):
         self.update_desired_vector()
 
     def key_up(self, key):
+        if key == pygame.locals.K_SPACE:
+            self.engine = not self.engine
         try:
             direction = self.key_map[key]
         except KeyError:
@@ -1006,6 +1102,7 @@ class GameView(ui.RootElement):
             self.drone.delete()
         self.ground = Ground(self, level.ground_height)
         self.drone = Drone(self, level.start_pos)
+        self.viewpos.set_follow_target(self.drone)
         # self.cup.enable()
         # self.ball.enable()
         # self.old_line.disable()
@@ -1166,12 +1263,13 @@ class GameView(ui.RootElement):
 
         #         self.dots += 1
         #         self.last_ball_pos = self.ball.body.position
-
+        self.viewpos.update()
         globals.mouse_world = self.viewpos.pos + to_world_coords(self.mouse_pos)
 
     def draw(self):
         # drawing.draw_no_texture(globals.ui_buffer)
         drawing.scale(*globals.scale, 1)
+        drawing.translate(*-(self.viewpos.pos), 0)
         drawing.draw_all(globals.quad_buffer, self.atlas.texture)
 
     def mouse_motion(self, pos, rel, handled):

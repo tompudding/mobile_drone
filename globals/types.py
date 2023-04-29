@@ -52,6 +52,9 @@ class Point(object):
     def __len__(self):
         return 2
 
+    def __neg__(self):
+        return self * -1
+
     @total_ordering
     def __lt__(self, other):
         try:
@@ -87,6 +90,11 @@ class Point(object):
 
     def length(self):
         return math.sqrt(self.x ** 2 + self.y ** 2)
+
+    def direction(self):
+        return Point(
+            1 if self.x > 0 else -1 if self.x < 0 else 0, 1 if self.y > 0 else -1 if self.y < 0 else 0
+        )
 
     def distance_heuristic(self, other):
         # return (other-self).diaglength()
