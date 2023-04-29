@@ -9,6 +9,7 @@ import pygame
 import traceback
 import random
 import enum
+import itertools
 
 box_level = 7
 ground_level = 6
@@ -30,7 +31,7 @@ class CollisionTypes:
     BOTTOM = 2
     BOX = 3
     WALL = 4
-    CUP = 5
+    RECEIVER = 5
 
 
 class Directions(enum.IntFlag):
@@ -174,6 +175,7 @@ class Box(object):
 
     def __init__(self, parent, bl, tr):
         self.parent = parent
+        # bl, tr = (to_world_coords(x) for x in (bl, tr))
         self.quad = drawing.Quad(globals.quad_buffer)
         self.quad.set_vertices(bl, tr, box_level)
         self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
@@ -185,7 +187,7 @@ class Box(object):
         # vertices = [vertices[2],vertices[3],vertices[0],vertices[1]]
         self.moment = pymunk.moment_for_poly(self.mass, vertices)
         self.body = Body(moment=self.moment)
-        self.body.position = to_world_coords(self.quad.get_centre().to_float())
+        self.body.position = self.quad.get_centre().to_float()
         self.body.force = 0, 0
         self.body.torque = 0
         self.body.velocity = 0, 0
@@ -197,6 +199,58 @@ class Box(object):
         self.shape.friction = 0.2
         self.shape.elasticity = 0.5
         self.shape.collision_type = CollisionTypes.BOX
+        self.shape.parent = self
+        globals.space.add(self.body, self.shape)
+        self.in_world = True
+
+    def update(self):
+        vertices = [0, 0, 0, 0]
+        for i, v in enumerate(self.shape.get_vertices()):
+            vertices[(4 - i) & 3] = v.rotated(self.body.angle) + self.body.position
+
+        self.quad.set_all_vertices(vertices, box_level)
+
+    def delete(self):
+        self.quad.delete()
+        globals.space.remove(self.body, self.shape)
+        self.in_world = False
+
+
+class Receiver(object):
+    sprite_name = "resource/sprites/box.png"
+    mass = 0.01
+    density = 12 / 100000
+
+    def __init__(self, parent, pos, id):
+        self.parent = parent
+
+        bl = Point(pos, 0)
+        tr = bl + Point(40, 10)
+        # bl, tr = (to_world_coords(x) for x in (bl, tr))
+        self.id = id
+        self.quad = drawing.Quad(globals.quad_buffer)
+        self.quad.set_vertices(bl, tr, box_level)
+        self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
+        self.quad.set_texture_coordinates(self.normal_tc)
+        self.collision_impulse = Point(0, 0)
+
+        centre = self.quad.get_centre()
+        vertices = [tuple(Point(*v[:2]) - centre) for v in self.quad.vertex[:4]]
+        # vertices = [vertices[2],vertices[3],vertices[0],vertices[1]]
+        self.moment = pymunk.moment_for_poly(self.mass, vertices)
+        self.body = Body(mass=self.mass, moment=self.moment, body_type=pymunk.Body.STATIC)
+        self.body.position = self.quad.get_centre().to_float()
+        self.body.force = 0, 0
+        self.body.torque = 0
+        self.body.velocity = 0, 0
+        self.body.angular_velocity = 0
+        # print(self.body.position,self.body.velocity)
+        # print(vertices)
+        self.shape = pymunk.Poly(self.body, vertices)
+        self.shape.density = self.density
+        self.shape.friction = 0.2
+        self.shape.elasticity = 0.5
+        self.shape.collision_type = CollisionTypes.RECEIVER
         self.shape.parent = self
         globals.space.add(self.body, self.shape)
         self.in_world = True
@@ -317,6 +371,7 @@ class Drone(object):
         self.quad.set_texture_coordinates(parent.atlas.texture_coords(self.sprite_name))
 
         self.size = parent.atlas.subimage(self.sprite_name).size
+        # pos = to_world_coords(pos)
         self.bottom_left = pos
         self.top_right = pos + self.size
         self.turning_enabled = True
@@ -330,7 +385,7 @@ class Drone(object):
         self.mass = 0.08
         self.moment = pymunk.moment_for_poly(self.mass, vertices)
         self.body = Body(mass=self.mass, moment=self.moment)
-        self.body.position = to_world_coords(self.quad.get_centre().to_float())
+        self.body.position = self.quad.get_centre().to_float()
         self.body.force = 0, 0
         self.body.torque = 0
         self.body.velocity = 0, 0
@@ -452,8 +507,15 @@ class Drone(object):
         if self.grabbed:
             # We also have to work out the gravity on the grabbed object
             anti_grabbed = -globals.space.gravity * self.grabbed.body.mass * 0.5
+            try:
+                magnitude = self.grabbed.collision_impulse.length() / globals.dt
+            except TypeError:
+                magnitude = self.grabbed.collision_impulse.length / globals.dt
+
             anti_grabbed -= (self.grabbed.collision_impulse / globals.dt) * 0.5
-            anti_grav += anti_grabbed
+            # HAX: this magnitude can grow too large sometimes
+            if magnitude < 15:
+                anti_grav += anti_grabbed
             self.grabbed.collision_impulse = Point(0, 0)
 
         desired = self.desired_shift - self.body.velocity * 0.1
@@ -811,6 +873,7 @@ class LevelZero(Level):
     subtext = "idk lol"
     start_pos = Point(100, 50)
     items = [(Box, Point(200, 100), Point(220, 120))]
+    receivers = [800 + i * 600 for i in range(10)]
     min_distance = 200
     min_force = 50
 
@@ -979,6 +1042,7 @@ class GameView(ui.RootElement):
         # self.ground = None
         self.drone = None
         self.packages = []
+        self.receivers = []
 
         # self.test_line = Line(self, Point(0, 0), Point(0, 0))
         # self.test_line.set(Point(48, 167), Point(48, 217))
@@ -1005,11 +1069,15 @@ class GameView(ui.RootElement):
         self.bottom_handler = globals.space.add_collision_handler(CollisionTypes.DRONE, CollisionTypes.BOTTOM)
         self.box_handler = globals.space.add_collision_handler(CollisionTypes.BOX, CollisionTypes.BOTTOM)
 
+        self.receiver_handler = globals.space.add_collision_handler(
+            CollisionTypes.BOX, CollisionTypes.RECEIVER
+        )
+
         # self.cup_handler = globals.space.add_collision_handler(CollisionTypes.BALL, CollisionTypes.CUP)
 
         self.bottom_handler.begin = self.bottom_collision_start
         self.bottom_handler.separate = self.bottom_collision_end
-        self.box_handler.post_solve = self.box_post_solve
+        self.box_handler.post_solve = self.receiver_handler.post_solve = self.box_post_solve
         # self.box_handler.begin = self.box_hit
         # self.cup_handler.begin = self.cup_hit
         # # self.cup_handler.separate = self.cup_sep
@@ -1119,6 +1187,9 @@ class GameView(ui.RootElement):
             package.update()
             # jim += 1
             self.packages.append(package)
+
+        for i, pos in enumerate(level.receivers):
+            self.receivers.append(Receiver(self, pos, id=i))
 
         # if self.ground:
         #    self.ground.delete()
@@ -1277,7 +1348,7 @@ class GameView(ui.RootElement):
         # self.ball.set_pos(globals.mouse_pos)
 
         self.drone.update()
-        for package in self.packages:
+        for package in itertools.chain(self.packages, self.receivers):
             package.update()
 
         # if self.thrown:

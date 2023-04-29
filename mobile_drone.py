@@ -33,7 +33,7 @@ def init():
     globals.dirs = globals.types.Directories("resource")
 
     globals.screen = Point(w, h)
-    globals.scale = Point(2, 2)
+    globals.scale = Point(3, 3)
     globals.screen_root = ui.UIRoot(Point(0, 0), globals.screen)
     globals.ui_state = ui.UIState()
     globals.time_step = 1
