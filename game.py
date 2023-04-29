@@ -262,6 +262,7 @@ class Drone(object):
         self.last_update = None
         self.jets = self.shape.get_vertices()[:2]
         self.reset_forces()
+        self.target_rotation = 0
 
     def update(self):
         if self.last_update is None:
@@ -306,11 +307,33 @@ class Drone(object):
         desired = self.desired_shift - self.body.velocity * 0.1
 
         # If we want to go horizontal, we're going to have to try to get a rotation to make that happen
-        if abs(desired.x) > globals.epsilon:
-            print("oh no")
+        # We choose the amount of rotation based on how fast they want to go, with a max of 45 degrees
+        self.target_rotation = math.pi * 0.5 * (desired.x / self.max_desired)
 
-        force = (0, (anti_grav + desired)[1])
-        self.forces = (force, force)
+        # Then the differential in our jets is based on the size of the difference between the target rotation and our current rotation
+
+        desired_rotation = self.target_rotation - self.body.angle
+
+        coeff_range = 0.05
+        coeff = 1 + (coeff_range * desired_rotation) / (math.pi * 0.5)
+
+        self.forces = [coeff, 2 - coeff]
+
+        jet_dir = pymunk.Vec2d(0, -1).rotated(self.body.angle)
+
+        # We know that the sum in the y direction of our jets has to be equal to anti_grav + desired
+
+        for i, jet in enumerate(self.jets):
+            # That means to choose this force, we need the total force which makes our y component what we want
+            magnitude = ((anti_grav + desired)[1]) / jet_dir[1]
+            force = jet_dir * magnitude
+            self.forces[i] = force * self.forces[i]
+
+        # if desired_rotation > 0.1:
+        #    self.forces[0] *= 1.1
+
+        # force = (0, (anti_grav + desired)[1])
+        # self.forces = (force, force)
 
     def reset_forces(self):
         self.forces = None
