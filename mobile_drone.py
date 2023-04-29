@@ -38,6 +38,7 @@ def init():
     globals.ui_state = ui.UIState()
     globals.time_step = 1
     globals.epsilon = 0.001
+    globals.t = globals.time = 0
 
     # Light stuff
     globals.shadow_lights = []

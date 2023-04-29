@@ -328,6 +328,58 @@ class Receiver(object):
         self.name_quad.delete()
 
 
+class Fence(object):
+    sprite_name = "resource/sprites/fence.png"
+    mass = 0.01
+    density = 12 / 100000
+    is_package = False
+
+    def __init__(self, parent, pos):
+        self.parent = parent
+        self.id = -1
+        bl = Point(pos, 0)
+        tr = bl + Point(10, 120)
+
+        self.quad = drawing.Quad(globals.quad_buffer)
+        self.quad.set_vertices(bl, tr, box_level)
+        self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
+        self.quad.set_texture_coordinates(self.normal_tc)
+
+        centre = self.quad.get_centre()
+        vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
+        # vertices = [vertices[2],vertices[3],vertices[0],vertices[1]]
+        self.moment = pymunk.moment_for_poly(self.mass, vertices)
+        self.body = Body(mass=self.mass, moment=self.moment, body_type=pymunk.Body.STATIC)
+        self.body.position = to_phys_coords(self.quad.get_centre().to_float())
+        self.body.force = 0, 0
+        self.body.torque = 0
+        self.body.velocity = 0, 0
+        self.body.angular_velocity = 0
+        # print(self.body.position,self.body.velocity)
+        # print(vertices)
+        self.shape = pymunk.Poly(self.body, vertices)
+        self.shape.density = self.density
+        self.shape.friction = 0.2
+        self.shape.elasticity = 0.5
+        self.shape.collision_type = CollisionTypes.RECEIVER
+        self.shape.parent = self
+        globals.space.add(self.body, self.shape)
+        self.in_world = True
+
+    def update(self):
+        vertices = [0, 0, 0, 0]
+        for i, v in enumerate(self.shape.get_vertices()):
+            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
+
+        self.quad.set_all_vertices(vertices, box_level)
+
+    def delete(self):
+        self.quad.delete()
+        globals.space.remove(self.body, self.shape)
+        self.in_world = False
+        self.name_quad.delete()
+
+
 class Ground(object):
     sprite_name = "resource/sprites/ground.png"
 
@@ -512,7 +564,7 @@ class Drone(object):
                 )
             )
         # We also add an unseen stabilization joint
-        # stable = pymunk.PinJoint(self.body, item.body)
+        # stable = pymunk.SlideJoint(self.body, item.body, (0, 0), (0, 0), 0, self.grab_range)
         # self.joints.append(stable)
         # globals.space.add(stable)
 
@@ -961,7 +1013,8 @@ class LevelZero(Level):
     subtext = "idk lol"
     start_pos = Point(100 + offset, 50)
     items = [(Point(20, 20), 0), (Point(40, 40), 1), (Point(50, 10), 2), (Point(50, 50), 3)]
-    receivers = [800 + i * 600 for i in range(10)]
+    receivers = [600 + i * 500 for i in range(10)]
+    fences = [400]
     min_distance = 200
     min_force = 50
 
@@ -1143,28 +1196,9 @@ class GameView(ui.RootElement):
         self.drone = None
         self.packages = []
         self.receivers = []
+        self.fences = []
 
-        # self.test_line = Line(self, Point(0, 0), Point(0, 0))
-        # self.test_line.set(Point(48, 167), Point(48, 217))
-        # self.test_line.enable()
-
-        # self.boxes = []
-        # self.boxes.append(Box(self, Point(100,100), Point(200,200)))
-        # self.boxes.append(Box(self, Point(160,210), Point(260,310)))
-
-        # self.ball = Circle(self, globals.mouse_screen)
-        # self.ball = Ball(self, Point(150, 400), 10)
-        # self.dragging_line = Line(self, None, None)
-        # self.old_line = Line(self, None, None, (0.2, 0.2, 0.2, 1))
-
-        # Make 100 line segments for a dotted trajectory line
-        # self.dotted_line = [Line(self, None, None, (0, 0, 0.4, 1)) for i in range(1000)]
-        # self.dots = 0
-
-        # self.dragging = None
-        # self.thrown = False
         self.level_text = None
-        # self.sub_text = None
 
         self.bottom_handler = globals.space.add_collision_handler(CollisionTypes.DRONE, CollisionTypes.BOTTOM)
         self.box_handler = globals.space.add_collision_handler(CollisionTypes.BOX, CollisionTypes.BOTTOM)
@@ -1180,42 +1214,23 @@ class GameView(ui.RootElement):
         self.box_handler.post_solve = self.receiver_handler.post_solve = self.box_post_solve
         self.receiver_handler.begin = self.receiver_start
         self.receiver_handler.separate = self.receiver_end
-        # self.box_handler.begin = self.box_hit
-        # self.cup_handler.begin = self.cup_hit
-        # # self.cup_handler.separate = self.cup_sep
-        # self.moving = None
-        # self.moving_pos = None
-        # self.current_level = 0
-        # self.game_over = False
-        # self.restricted_box = None
-        # self.start_level = None
 
         self.levels = [
             LevelZero(),
-            #     LevelOne(),
-            #     LevelTwo(),
-            #     LevelThree(),
-            #     LevelFour(),
-            #     LevelFive(),
-            #     LevelSix(),
-            #     # LevelSeven(),
         ]
-        # self.done = [False for level in self.levels]
 
-        # self.last_throw = None
-        # self.next_level_menu = NextLevel(self, Point(0.25, 0.3), Point(0.75, 0.7))
-        # self.next_level_menu.disable()
         self.main_menu = MainMenu(self, Point(0.2, 0.1), Point(0.8, 0.9))
 
-        # Skip the main menu for now
-        # self.main_menu.disable()
-        # self.main_menu.start_level(0, 0)
-
         self.paused = True
+        self.current_level = 0
+
+        # Skip the main menu for now
+        self.main_menu.disable()
+        self.main_menu.start_level(0, 0)
+
         # self.rotating = None
         # self.rotating_pos = None
 
-        self.current_level = 0
         # self.cup = Cup(self, Point(globals.screen.x / 2, 0))
         # self.init_level()
         # self.cup.disable()
@@ -1303,10 +1318,25 @@ class GameView(ui.RootElement):
         for package in self.packages:
             package.delete()
 
+        self.packages = []
+
+        for receiver in self.receivers:
+            receiver.delete()
+
+        self.receivers = []
+
+        for fence in self.fences:
+            fence.delete()
+
+        self.fences = []
+
         # We're going to generate a random package for delivery
 
         for i, pos in enumerate(level.receivers):
             self.receivers.append(Receiver(self, pos, id=i))
+
+        for pos in level.fences:
+            self.fences.append(Fence(self, pos))
 
         size, target = level.items.pop(0)
         print("PACKAGE with target", target)
