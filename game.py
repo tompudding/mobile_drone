@@ -172,9 +172,12 @@ class Box(object):
     sprite_name = "resource/sprites/box.png"
     mass = 0.01
     density = 12 / 100000
+    is_package = True
+    receive_time = 5000
 
-    def __init__(self, parent, bl, tr):
+    def __init__(self, parent, bl, tr, target):
         self.parent = parent
+        self.id = target
         # bl, tr = (to_world_coords(x) for x in (bl, tr))
         self.quad = drawing.Quad(globals.quad_buffer)
         self.quad.set_vertices(bl, tr, box_level)
@@ -204,6 +207,15 @@ class Box(object):
         self.in_world = True
         # Our anchors are the top left and top right
         self.anchor_points = [point * 0.9 for point in self.shape.get_vertices()[2:]][::-1]
+        self.on_receiver = None
+
+    def mark_on_receiver(self, on_receiver):
+        if not on_receiver:
+            self.on_receiver = None
+            return
+
+        if self.on_receiver is None:
+            self.on_receiver = globals.time
 
     def update(self):
         vertices = [0, 0, 0, 0]
@@ -211,6 +223,10 @@ class Box(object):
             vertices[(4 - i) & 3] = v.rotated(self.body.angle) + self.body.position
 
         self.quad.set_all_vertices(vertices, box_level)
+
+        if self.on_receiver is not None and globals.time - self.on_receiver > self.receive_time:
+            self.on_receiver = None
+            self.parent.package_delivered(self)
 
     def delete(self):
         self.quad.delete()
@@ -222,6 +238,7 @@ class Receiver(object):
     sprite_name = "resource/sprites/box.png"
     mass = 0.01
     density = 12 / 100000
+    is_package = False
 
     def __init__(self, parent, pos, id):
         self.parent = parent
@@ -894,7 +911,7 @@ class LevelZero(Level):
     name = "Introduction"
     subtext = "idk lol"
     start_pos = Point(100, 50)
-    items = [(Box, Point(200, 100), Point(220, 120))]
+    items = [(Point(20, 20), 0)]
     receivers = [800 + i * 600 for i in range(10)]
     min_distance = 200
     min_force = 50
@@ -1100,6 +1117,8 @@ class GameView(ui.RootElement):
         self.bottom_handler.begin = self.bottom_collision_start
         self.bottom_handler.separate = self.bottom_collision_end
         self.box_handler.post_solve = self.receiver_handler.post_solve = self.box_post_solve
+        self.receiver_handler.begin = self.receiver_start
+        self.receiver_handler.separate = self.receiver_end
         # self.box_handler.begin = self.box_hit
         # self.cup_handler.begin = self.cup_hit
         # # self.cup_handler.separate = self.cup_sep
@@ -1147,6 +1166,33 @@ class GameView(ui.RootElement):
 
     def bottom_collision_end(self, arbiter, space, data):
         # print("BCE")
+        return True
+
+    def receiver_start(self, arbiter, space, data):
+
+        ids = [shape.parent for shape in arbiter.shapes]
+        if ids[0].id != ids[1].id:
+            return True
+
+        receiver, package = ids
+        if not package.is_package:
+            receiver, package = package, receiver
+
+        package.mark_on_receiver(True)
+
+        return True
+
+    def receiver_end(self, arbiter, space, data):
+        ids = [shape.parent for shape in arbiter.shapes]
+        if ids[0].id != ids[1].id:
+            return True
+
+        receiver, package = ids
+        if not package.is_package:
+            receiver, package = package, receiver
+
+        package.mark_on_receiver(False)
+
         return True
 
     def box_post_solve(self, arbiter, space, data):
@@ -1197,21 +1243,19 @@ class GameView(ui.RootElement):
         for package in self.packages:
             package.delete()
 
-        # for line in self.dotted_line[: self.dots]:
-        #    line.disable()
-        # self.dots = 0
+        # We're going to generate a random package for delivery
 
-        # self.boxes = []
-        # jim = 0
-        for item, bl, tr in level.items:
-            package = item(self, bl, tr)
+        for i, pos in enumerate(level.receivers):
+            self.receivers.append(Receiver(self, pos, id=i))
+
+        for size, target in level.items:
+            bl = Point(50, 0)
+
+            package = Box(self, bl, bl + size, target=target)
             # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
             package.update()
             # jim += 1
             self.packages.append(package)
-
-        for i, pos in enumerate(level.receivers):
-            self.receivers.append(Receiver(self, pos, id=i))
 
         # if self.ground:
         #    self.ground.delete()
@@ -1236,6 +1280,11 @@ class GameView(ui.RootElement):
         #    self.cup.remove_line()
         # else:
         #    self.cup.reset_line()
+
+    def package_delivered(self, delivered_package):
+        print("Package delivered!")
+        self.packages = [package for package in self.packages if package is not delivered_package]
+        delivered_package.delete()
 
     def end_game(self):
         self.game_over = GameOver(self, Point(0.2, 0.2), Point(0.8, 0.8))
