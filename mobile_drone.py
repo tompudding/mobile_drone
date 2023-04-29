@@ -55,7 +55,7 @@ def init():
     globals.nonstatic_text_buffer = drawing.QuadBuffer(131072)
     globals.screen_quadbuffer = drawing.QuadBuffer(16)
     globals.space = pymunk.Space()  # Create a Space which contain the simulation
-    globals.space.gravity = (0.0, -1000.0)
+    globals.space.gravity = (0.0, -500.0)
     globals.space.damping = 0.999  # to prevent it from blowing up.
 
     # Hackeroo
