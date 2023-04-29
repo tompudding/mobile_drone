@@ -498,7 +498,9 @@ class Drone(object):
         self.joints = []
         for our_anchor, item_anchor in zip(self.anchor_points, item.anchor_points()):
             print(f"{our_anchor=} {item_anchor=}")
-            joint = pymunk.PinJoint(self.body, item.body, anchor_a=our_anchor, anchor_b=item_anchor)
+            joint = pymunk.SlideJoint(
+                self.body, item.body, anchor_a=our_anchor, anchor_b=item_anchor, min=0, max=self.grab_range
+            )
             self.joints.append(joint)
             globals.space.add(joint)
             self.anchors.append(
@@ -631,7 +633,6 @@ class Drone(object):
         anti_grav *= 2
         force = (0, (anti_grav + desired)[1])
         self.force = (desired[0], (anti_grav + desired)[1])
-        print(f"{self.force=}")
 
     def reset_forces(self):
         self.forces = None
@@ -1111,6 +1112,7 @@ class TimeOfDay(object):
 
 class GameView(ui.RootElement):
     text_fade_duration = 1000
+    next_package_format = "The package is going to number {number}"
 
     def __init__(self):
         # self.atlas = globals.atlas = drawing.texture.TextureAtlas('tiles_atlas_0.png','tiles_atlas.txt')
@@ -1125,6 +1127,17 @@ class GameView(ui.RootElement):
         self.ground = Ground(self, LevelZero.ground_height)
         self.light = drawing.Quad(globals.light_quads)
         self.light.set_vertices(self.ground.bottom_left, self.ground.ceiling_right, 0)
+
+        self.next_package_text = ui.TextBox(
+            self,
+            Point(0.7, 0.9),
+            Point(1, 1),
+            self.next_package_format.format(number=1),
+            2,
+            colour=drawing.constants.colours.green,
+            alignment=drawing.texture.TextAlignments.LEFT,
+        )
+        self.next_package_text
 
         # self.ground = None
         self.drone = None
@@ -1297,14 +1310,7 @@ class GameView(ui.RootElement):
 
         size, target = level.items.pop(0)
         print("PACKAGE with target", target)
-
-        bl = Point(50 + offset + random.randint(-20, 20), 0)
-
-        package = Box(self, bl, bl + size, target=target)
-        # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
-        package.update()
-        # jim += 1
-        self.packages.append(package)
+        self.create_package(size, target)
 
         # if self.ground:
         #    self.ground.delete()
@@ -1330,6 +1336,19 @@ class GameView(ui.RootElement):
         # else:
         #    self.cup.reset_line()
 
+    def create_package(self, size, target):
+        print("PACKAGE with target", target)
+
+        bl = Point(50 + offset + random.randint(-20, 20), 0)
+
+        package = Box(self, bl, bl + size, target=target)
+        # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
+        package.update()
+        # jim += 1
+        self.packages.append(package)
+
+        self.next_package_text.set_text(self.next_package_format.format(number=target + 1))
+
     def package_delivered(self, delivered_package):
         print("Package delivered!")
         self.packages = [package for package in self.packages if package is not delivered_package]
@@ -1342,15 +1361,7 @@ class GameView(ui.RootElement):
             return
 
         size, target = level.items.pop(0)
-        print("PACKAGE with target", target)
-
-        bl = Point(50 + random.randint(-20, 20), 0)
-
-        package = Box(self, bl, bl + size, target=target)
-        # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
-        package.update()
-        # jim += 1
-        self.packages.append(package)
+        self.create_package(size, target)
 
     def end_game(self):
         self.game_over = GameOver(self, Point(0.2, 0.2), Point(0.8, 0.8))
@@ -1406,15 +1417,7 @@ class GameView(ui.RootElement):
         ]
 
         size, target = level.items.pop(0)
-
-        bl = Point(50 + random.randint(-20, 20), 0)
-
-        package = Box(self, bl, bl + size, target=target)
-        print("PACKAGE with target", target, "size", size)
-        # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
-        package.update()
-        # jim += 1
-        self.packages.append(package)
+        self.create_package(size, target)
 
     def next_level(self):
         self.stop_throw()
