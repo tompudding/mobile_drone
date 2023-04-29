@@ -16,6 +16,9 @@ ground_level = 6
 drone_level = 8
 sf = 1
 debug_sprite_name = "resource/sprites/box.png"
+phys_scale = 1
+
+offset = 0
 
 
 def to_world_coords(p):
@@ -24,6 +27,14 @@ def to_world_coords(p):
 
 def to_screen_coords(p):
     return p * globals.scale
+
+
+def to_phys_coords(p):
+    return p / phys_scale
+
+
+def from_phys_coords(p):
+    return p * phys_scale
 
 
 class CollisionTypes:
@@ -135,7 +146,7 @@ class ViewPos(object):
 
         if self.follow:
             # We haven't locked onto it yet, so move closer, and lock on if it's below the threshold
-            fpos = self.follow.body.position + globals.screen * Point(0, 0.03)
+            fpos = from_phys_coords(self.follow.body.position) + globals.screen * Point(0, 0.03)
             if not fpos:
                 return
             target = fpos - (globals.screen / globals.scale) * 0.5
@@ -186,11 +197,11 @@ class Box(object):
         self.collision_impulse = Point(0, 0)
 
         centre = self.quad.get_centre()
-        vertices = [tuple(Point(*v[:2]) - centre) for v in self.quad.vertex[:4]]
+        vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
         # vertices = [vertices[2],vertices[3],vertices[0],vertices[1]]
         self.moment = pymunk.moment_for_poly(self.mass, vertices)
         self.body = Body(moment=self.moment)
-        self.body.position = self.quad.get_centre().to_float()
+        self.body.position = to_phys_coords(self.quad.get_centre().to_float())
         self.body.force = 0, 0
         self.body.torque = 0
         self.body.velocity = 0, 0
@@ -239,7 +250,7 @@ class Box(object):
     def update(self):
         vertices = [0, 0, 0, 0]
         for i, v in enumerate(self.shape.get_vertices()):
-            vertices[(4 - i) & 3] = v.rotated(self.body.angle) + self.body.position
+            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
 
         self.quad.set_all_vertices(vertices, box_level)
 
@@ -283,11 +294,11 @@ class Receiver(object):
         self.collision_impulse = Point(0, 0)
 
         centre = self.quad.get_centre()
-        vertices = [tuple(Point(*v[:2]) - centre) for v in self.quad.vertex[:4]]
+        vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
         # vertices = [vertices[2],vertices[3],vertices[0],vertices[1]]
         self.moment = pymunk.moment_for_poly(self.mass, vertices)
         self.body = Body(mass=self.mass, moment=self.moment, body_type=pymunk.Body.STATIC)
-        self.body.position = self.quad.get_centre().to_float()
+        self.body.position = to_phys_coords(self.quad.get_centre().to_float())
         self.body.force = 0, 0
         self.body.torque = 0
         self.body.velocity = 0, 0
@@ -306,7 +317,7 @@ class Receiver(object):
     def update(self):
         vertices = [0, 0, 0, 0]
         for i, v in enumerate(self.shape.get_vertices()):
-            vertices[(4 - i) & 3] = v.rotated(self.body.angle) + self.body.position
+            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
 
         self.quad.set_all_vertices(vertices, box_level)
 
@@ -355,8 +366,8 @@ class Ground(object):
 
         self.segment = Segment(
             globals.space.static_body,
-            self.top_left,
-            self.top_right,
+            to_phys_coords(self.top_left),
+            to_phys_coords(self.top_right),
             0.0,
         )
         # bottom.sensor = True
@@ -375,8 +386,8 @@ class Ground(object):
             # We'll also add a wall to the left
             segment = Segment(
                 globals.space.static_body,
-                start,
-                end,
+                to_phys_coords(start),
+                to_phys_coords(end),
                 0.0,
             )
 
@@ -429,12 +440,12 @@ class Drone(object):
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
         centre = self.quad.get_centre()
-        vertices = [tuple(Point(*v[:2]) - centre) for v in self.quad.vertex[:4]]
+        vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
 
         self.mass = 0.08
         self.moment = pymunk.moment_for_poly(self.mass, vertices)
         self.body = Body(mass=self.mass, moment=self.moment)
-        self.body.position = self.quad.get_centre().to_float()
+        self.body.position = to_phys_coords(self.quad.get_centre().to_float())
         self.body.force = 0, 0
         self.body.torque = 0
         self.body.velocity = 0, 0
@@ -458,7 +469,7 @@ class Drone(object):
         self.jet_lines = [Line(self, Point(0, 0), Point(300, 3000)) for i in (0, 1)]
 
         self.desired_shift = Point(0, 0)
-        self.desired_pos = self.body.position
+        self.desired_pos = from_phys_coords(self.body.position)
         self.desired_field = 0
         self.desired_vector = Point(0, 0)
         self.last_update = None
@@ -493,15 +504,15 @@ class Drone(object):
             self.anchors.append(
                 Line(
                     self,
-                    self.body.local_to_world(our_anchor),
-                    item.body.local_to_world(item_anchor),
+                    from_phys_coords(self.body.local_to_world(our_anchor)),
+                    from_phys_coords(item.body.local_to_world(item_anchor)),
                     colour=(1, 1, 1, 1),
                 )
             )
         # We also add an unseen stabilization joint
-        stable = pymunk.PinJoint(self.body, item.body)
-        self.joints.append(stable)
-        globals.space.add(stable)
+        # stable = pymunk.PinJoint(self.body, item.body)
+        # self.joints.append(stable)
+        # globals.space.add(stable)
 
     def release(self):
         if not self.grabbed:
@@ -526,7 +537,7 @@ class Drone(object):
 
         vertices = [0, 0, 0, 0]
         for i, v in enumerate(self.shape.get_vertices()):
-            vertices[(4 - i) & 3] = v.rotated(self.body.angle) + self.body.position
+            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
 
         if self.forces is not None:
             # Debug draw the lines
@@ -551,7 +562,7 @@ class Drone(object):
         if self.desired_shift.length() > self.max_desired:
             scale_factor = self.max_desired / desired_length
             self.desired_shift *= scale_factor
-        self.desired_pos = self.body.position + self.desired_shift
+        self.desired_pos = from_phys_coords(self.body.position) + self.desired_shift
         self.desired_quad.set_vertices(
             self.desired_pos - Point(4, 4), self.desired_pos + Point(4, 4), drone_level + 1
         )
@@ -565,7 +576,8 @@ class Drone(object):
                 self.anchor_points, self.grabbed._anchor_points, self.anchors
             ):
                 anchor.set(
-                    self.body.local_to_world(our_anchor), self.grabbed.body.local_to_world(item_anchor)
+                    from_phys_coords(self.body.local_to_world(our_anchor)),
+                    from_phys_coords(self.grabbed.body.local_to_world(item_anchor)),
                 )
 
     def calculate_forces(self):
@@ -589,7 +601,7 @@ class Drone(object):
                 anti_grav += anti_grabbed
             self.grabbed.collision_impulse = Point(0, 0)
 
-        desired = self.desired_shift - self.body.velocity * 0.1
+        desired = self.desired_shift - self.body.velocity * 0.1 / phys_scale
 
         # If we want to go horizontal, we're going to have to try to get a rotation to make that happen
         # We choose the amount of rotation based on how fast they want to go, with a max of 45 degrees
@@ -619,7 +631,7 @@ class Drone(object):
         anti_grav *= 2
         force = (0, (anti_grav + desired)[1])
         self.force = (desired[0], (anti_grav + desired)[1])
-        # print(f"{force=}")
+        print(f"{self.force=}")
 
     def reset_forces(self):
         self.forces = None
@@ -634,7 +646,8 @@ class Drone(object):
         if not self.engine:
             return
 
-        self.body.apply_force_at_world_point(self.force, (0, 0))
+        force = pymunk.Vec2d(*self.force).rotated(-self.body.angle)
+        self.body.apply_force_at_local_point(force, (0, 0))
         elapsed = globals.dt
         desired_angle = -0.5 * ((math.pi * 0.5 * (self.desired_shift.x / self.max_desired)))
 
@@ -945,7 +958,7 @@ class LevelZero(Level):
     text = "Deliver Stuff"
     name = "Introduction"
     subtext = "idk lol"
-    start_pos = Point(100 + 5000, 50)
+    start_pos = Point(100 + offset, 50)
     items = [(Point(20, 20), 0), (Point(40, 40), 1), (Point(50, 10), 2), (Point(50, 50), 3)]
     receivers = [800 + i * 600 for i in range(10)]
     min_distance = 200
@@ -1285,7 +1298,7 @@ class GameView(ui.RootElement):
         size, target = level.items.pop(0)
         print("PACKAGE with target", target)
 
-        bl = Point(5050 + random.randint(-20, 20), 0)
+        bl = Point(50 + offset + random.randint(-20, 20), 0)
 
         package = Box(self, bl, bl + size, target=target)
         # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
@@ -1599,17 +1612,19 @@ class GameView(ui.RootElement):
             if self.drone.grabbed:
                 self.drone.release()
             else:
-                info = self.drone.shape.point_query(tuple(globals.mouse_world))
+                info = self.drone.shape.point_query(tuple(to_phys_coords(globals.mouse_world)))
 
-                diff = self.drone.body.world_to_local(tuple(globals.mouse_world))
+                diff = from_phys_coords(
+                    self.drone.body.world_to_local(tuple(to_phys_coords(globals.mouse_world)))
+                )
 
                 if (
                     abs(diff.x) < self.drone.size.x * 0.5
                     and diff.y < 0
-                    and self.drone.in_grab_range(info.distance)
+                    and self.drone.in_grab_range(info.distance * phys_scale)
                 ):
                     for package in self.packages:
-                        info = package.shape.point_query(tuple(globals.mouse_world))
+                        info = package.shape.point_query(tuple(to_phys_coords(globals.mouse_world)))
                         if info.distance >= 0:
                             continue
 
@@ -1644,28 +1659,6 @@ class GameView(ui.RootElement):
         #     self.stop_throw()
 
         return False, False
-
-    def throw_ball(self, pos, direction):
-        self.last_throw = (pos, direction)
-        self.ball.body.position = pos
-        self.ball.body.angle = 0
-        self.ball.body.force = 0, 0
-        self.ball.body.torque = 0
-        self.ball.body.velocity = 0, 0
-        self.ball.body.angular_velocity = 0
-        self.ball.body.moment = self.ball.moment
-        self.ball.body.apply_impulse_at_local_point(direction)
-        self.thrown = True
-        globals.cursor.enable()
-        for line in self.dotted_line[: self.dots]:
-            line.disable()
-        self.dots = 0
-
-        self.dragging = None
-        self.dragging_line.disable()
-        self.last_ball_pos = self.ball.body.position
-        self.old_line.set(self.dragging_line.start, self.dragging_line.end)
-        self.old_line.enable()
 
     def apply_forces(self):
         if self.drone:
