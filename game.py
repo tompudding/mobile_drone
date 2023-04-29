@@ -314,7 +314,7 @@ class Drone(object):
 
         desired_rotation = self.target_rotation - self.body.angle
 
-        coeff_range = 0.05
+        coeff_range = 0.3
         coeff = 1 + (coeff_range * desired_rotation) / (math.pi * 0.5)
 
         self.forces = [coeff, 2 - coeff]
@@ -329,37 +329,32 @@ class Drone(object):
             force = jet_dir * magnitude
             self.forces[i] = force * self.forces[i]
 
-        # if desired_rotation > 0.1:
-        #    self.forces[0] *= 1.1
-
-        # force = (0, (anti_grav + desired)[1])
-        # self.forces = (force, force)
+        # For the real forces we're going to simply apply two orthoganal forces to the centre of the object to simulate things
+        # First the gravity force
+        anti_grav *= 2
+        force = (0, (anti_grav + desired)[1])
+        self.force = (desired[0], (anti_grav + desired)[1])
 
     def reset_forces(self):
         self.forces = None
+        self.force = None
 
         # for line in self.jet_lines:
         #    line.disable()
 
     def apply_forces(self):
-        if self.forces is None:
+        if self.force is None:
             self.calculate_forces()
 
-        for force, jet in zip(self.forces, self.jets):
-            self.body.apply_force_at_local_point(force, jet)
+        self.body.apply_force_at_world_point(self.force, (0, 0))
+        elapsed = globals.dt
+        desired_angle = -0.5 * ((math.pi * 0.5 * (self.desired_shift.x / self.max_desired)))
 
-        # The drone is clever and will set the downward force of its two jets in order to get to the desired position.
-        # In practice this is quite complicated. Hmm. Let's just do vertical for now
-        # print(self.body.force, self.body.mass, self.moment)
-        # self.body.apply_force_at_local_point(-globals.space.gravity * self.body.mass)
-        # print("af")
+        desired_angular_velocity = (desired_angle - self.body.angle) * elapsed * 4000
+        if abs(desired_angular_velocity) < 0.05:
+            desired_angular_velocity = 0
 
-        # self.centre = self.body.position
-        # final_vertices = []
-        # for r, a in self.polar_vertices:
-        #     c = cmath.rect(r, a + self.body.angle)
-        #     final_vertices.append(Point(c.real, c.imag) + self.centre)
-        # self.quad.set_all_vertices(final_vertices, ball_level)
+        self.body.angular_velocity = desired_angular_velocity  # torque
 
     def update_desired_vector(self):
         self.desired_vector = Point(0, 0)

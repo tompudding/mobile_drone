@@ -157,7 +157,7 @@ def main_run():
         if fps == 0:
             fps = 50
         iterations = 25
-        dt = 1.0 / float(fps) / float(iterations)
+        globals.dt = dt = 1.0 / float(fps) / float(iterations)
         for x in range(iterations):  # 10 iterations to get a more stable simulation
             globals.current_view.apply_forces()
             globals.space.step(dt)
