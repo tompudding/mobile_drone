@@ -178,6 +178,7 @@ class Box(object):
         self.quad.set_vertices(bl, tr, box_level)
         self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
         self.quad.set_texture_coordinates(self.normal_tc)
+        self.collision_impulse = Point(0, 0)
 
         centre = self.quad.get_centre()
         vertices = [tuple(Point(*v[:2]) - centre) for v in self.quad.vertex[:4]]
@@ -194,7 +195,7 @@ class Box(object):
         self.shape = pymunk.Poly(self.body, vertices)
         self.shape.density = self.density
         self.shape.friction = 0.2
-        self.shape.elasticity = 0.95
+        self.shape.elasticity = 0.5
         self.shape.collision_type = CollisionTypes.BOX
         self.shape.parent = self
         globals.space.add(self.body, self.shape)
@@ -221,17 +222,21 @@ class Ground(object):
         self.height = height
 
         # TODO: Put proper lower bounds on so we don't fall off. Also make this a ui object so we can use its absolute bounds easier?
-        self.bottom_left = Point(-1000, -self.height)
-        self.top_right = Point(1000, 0)
+        self.bottom_left = Point(0, -self.height)
+        self.top_right = Point(128 * 100, 0)
         self.top_left = Point(self.bottom_left.x, 0)
+        self.bottom_right = Point(self.top_right.x, self.bottom_left.y)
         self.size = self.top_right - self.bottom_left
+
+        self.ceiling_left = self.top_left + Point(0, 1000)
+        self.ceiling_right = self.top_right + Point(0, self.ceiling_left.y)
 
         # Typically we'd do this with a single quad and adjust the texture coords for a repeat, but that gets
         # a bit more complicated with the lighting, so for speed lets just make a quad for each repeat, there won't be that many
         subimage = parent.atlas.subimage(self.sprite_name)
         tc = parent.atlas.texture_coords(self.sprite_name)
 
-        pos = self.bottom_left
+        pos = Point(*self.bottom_left)
         self.quads = []
 
         quad_size = Point(subimage.size.x, self.height)
@@ -254,12 +259,33 @@ class Ground(object):
         # bottom.sensor = True
         self.segment.collision_type = CollisionTypes.BOTTOM
         self.segment.friction = 1
-        self.elasticity = 0.5
+        self.elasticity = 0.3
 
         globals.space.add(self.segment)
+        self.segments = [self.segment]
+
+        for (start, end) in (
+            (self.bottom_left, self.ceiling_left),
+            (self.ceiling_left, self.ceiling_right),
+            (self.ceiling_right, self.bottom_right),
+        ):
+            # We'll also add a wall to the left
+            segment = Segment(
+                globals.space.static_body,
+                start,
+                end,
+                0.0,
+            )
+
+            segment.collision_type = CollisionTypes.WALL
+            segment.friction = 1
+            segment.elasticity = 0.5
+            globals.space.add(segment)
+            self.segments.append(segment)
 
     def delete(self):
-        globals.space.remove(self.segment)
+        for segment in self.segments:
+            globals.space.remove(segment)
 
 
 class Drone(object):
@@ -312,7 +338,7 @@ class Drone(object):
         # print(self.body.position,self.body.velocity)
         self.shape = pymunk.Poly(self.body, vertices)
         self.shape.friction = 0.5
-        self.shape.elasticity = 0.8
+        self.shape.elasticity = 0.3
         self.shape.collision_type = CollisionTypes.DRONE
         globals.space.add(self.body, self.shape)
 
@@ -336,6 +362,7 @@ class Drone(object):
         self.reset_forces()
         self.target_rotation = 0
         self.engine = True
+        self.anchors = []
 
     def disable_turning(self):
         self.turning_enabled = False
@@ -353,6 +380,19 @@ class Drone(object):
             self.body, item.body, anchor_a=(0, 0), anchor_b=(0, 0), min=0, max=self.grab_range
         )
         globals.space.add(self.joint)
+        self.anchors = []
+        self.anchors.append(Line(self, self.body.position, item.body.position, colour=(1, 1, 1, 1)))
+
+    def release(self):
+        if not self.grabbed:
+            return
+
+        globals.space.remove(self.joint)
+        for anchor in self.anchors:
+            anchor.delete()
+        self.anchors = []
+        self.grabbed = None
+        self.joint = None
 
     def enable_turning(self):
         self.turning_enabled = True
@@ -398,6 +438,9 @@ class Drone(object):
 
         if not self.turning_enabled and self.body.position[1] > 100:
             self.enable_turning()
+
+        for anchor in self.anchors:
+            anchor.set(self.body.position, self.grabbed.body.position)
 
     def calculate_forces(self):
         if not self.engine:
@@ -540,72 +583,8 @@ class Line(object):
     def disable(self):
         self.line.disable()
 
-
-class Cup(object):
-    def __init__(self, parent, pos):
-        self.parent = parent
-        self.centre = pos
-        self.vertices = [(0, 90), (20, 3), (64, 3), (85, 90)]
-        self.vertices = [pos + (((Point(*v) - Point(43, 0)) * 0.7)) for v in self.vertices]
-        self.segments = []
-        self.line_quads = []
-        self.dotted_line = []
-
-        for i in range(len(self.vertices) - 1):
-            v = self.vertices
-            segment = Segment(globals.space.static_body, v[i], v[i + 1], 0)
-            segment.friction = 1000
-            segment.elasticity = 0
-            if i == 1:
-                segment.collision_type = CollisionTypes.CUP
-            else:
-                segment.collision_type = CollisionTypes.WALL
-            self.segments.append(segment)
-            line_quad = drawing.Line(globals.line_buffer)
-            line_quad.set_colour((1, 0, 0, 1))
-            line_quad.set_vertices(v[i], v[i + 1], 6)
-            self.line_quads.append(line_quad)
-            # print(v[i],v[i+1])
-
-        globals.space.add(*self.segments)
-
-    def disable(self):
-        for quad in self.line_quads:
-            quad.disable()
-
-        for line in self.dotted_line:
-            line.disable()
-
-    def enable(self):
-        for quad in self.line_quads:
-            quad.enable()
-
-        for line in self.dotted_line:
-            line.enable()
-
-    def reset_line(self):
-        for line in self.dotted_line:
-            line.delete()
-        self.dotted_line = []
-
-        # Finally we draw a dotted line around where you're allowed to throw from. That means starting over at
-        # the left and going round
-        num_segments = 200
-        angle = math.pi / num_segments
-        for dot in range(0, num_segments, 2):
-            a = angle * dot
-            b = angle * (dot + 1)
-            start = self.centre + (Point(math.cos(a), math.sin(a)) * self.parent.min_distance)
-            end = self.centre + (Point(math.cos(b), math.sin(b)) * self.parent.min_distance)
-            line = drawing.Line(globals.line_buffer)
-            line.set_colour((0.4, 0.4, 0.4, 1))
-            line.set_vertices(start, end, 6)
-            self.dotted_line.append(line)
-
-    def remove_line(self):
-        for line in self.dotted_line:
-            line.delete()
-        self.dotted_line = []
+    def delete(self):
+        self.line.delete()
 
 
 class NextLevel(ui.HoverableBox):
@@ -992,11 +971,12 @@ class GameView(ui.RootElement):
         self.mouse_pos = Point(0, 0)
 
         # For the ambient light
-        self.light = drawing.Quad(globals.light_quads)
-        self.light.set_vertices(Point(0, -100), globals.screen - Point(0, -100), 0)
-
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
-        self.ground = None
+        self.ground = Ground(self, LevelZero.ground_height)
+        self.light = drawing.Quad(globals.light_quads)
+        self.light.set_vertices(self.ground.bottom_left, self.ground.ceiling_right, 0)
+
+        # self.ground = None
         self.drone = None
         self.packages = []
 
@@ -1140,12 +1120,12 @@ class GameView(ui.RootElement):
             # jim += 1
             self.packages.append(package)
 
-        if self.ground:
-            self.ground.delete()
+        # if self.ground:
+        #    self.ground.delete()
 
         if self.drone:
             self.drone.delete()
-        self.ground = Ground(self, level.ground_height)
+        # self.ground = Ground(self, level.ground_height)
         self.drone = Drone(self, level.start_pos)
         self.viewpos.set_follow_target(self.drone)
         # self.cup.enable()
@@ -1257,7 +1237,7 @@ class GameView(ui.RootElement):
         #    self.throw_ball(*self.last_throw)
 
     def key_up(self, key):
-        if key == pygame.locals.K_SPACE:
+        if 0 and key == pygame.locals.K_SPACE:
             # space is as good as the left button
             self.mouse_button_up(globals.mouse_screen, 1)
 
@@ -1404,23 +1384,25 @@ class GameView(ui.RootElement):
             return super(GameView, self).mouse_button_up(pos, button)
 
         if button == 1:
-            info = self.drone.shape.point_query(tuple(globals.mouse_world))
+            if self.drone.grabbed:
+                self.drone.release()
+            else:
+                info = self.drone.shape.point_query(tuple(globals.mouse_world))
 
-            diff = self.drone.body.world_to_local(tuple(globals.mouse_world))
+                diff = self.drone.body.world_to_local(tuple(globals.mouse_world))
 
-            print(self.drone.size)
-            if (
-                abs(diff.x) < self.drone.size.x * 0.5
-                and diff.y < 0
-                and self.drone.in_grab_range(info.distance)
-            ):
-                for package in self.packages:
-                    info = package.shape.point_query(tuple(globals.mouse_world))
-                    if info.distance >= 0:
-                        continue
+                if (
+                    abs(diff.x) < self.drone.size.x * 0.5
+                    and diff.y < 0
+                    and self.drone.in_grab_range(info.distance)
+                ):
+                    for package in self.packages:
+                        info = package.shape.point_query(tuple(globals.mouse_world))
+                        if info.distance >= 0:
+                            continue
 
-                    self.drone.grab(package)
-                    break
+                        self.drone.grab(package)
+                        break
 
         # if button == 1 and self.dragging:
         #     # release!
