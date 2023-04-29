@@ -244,6 +244,7 @@ class Drone(object):
         self.shape.elasticity = 0.8
         self.shape.collision_type = CollisionTypes.DRONE
         globals.space.add(self.body, self.shape)
+
         # self.polar_vertices = [cmath.polar(v[0] + v[1] * 1j) for v in self.vertices]
 
         # For debugging we'll draw a box around the desired pos
@@ -251,11 +252,16 @@ class Drone(object):
             globals.quad_buffer, tc=parent.atlas.texture_coords(debug_sprite_name)
         )
 
+        # Also for debugging we'll draw some lines for the jet forces
+        self.jet_lines = [Line(self, Point(0, 0), Point(300, 3000)) for i in (0, 1)]
+
         self.desired_shift = Point(0, 0)
         self.desired_pos = self.body.position
         self.desired_field = 0
         self.desired_vector = Point(0, 0)
         self.last_update = None
+        self.jets = self.shape.get_vertices()[:2]
+        self.reset_forces()
 
     def update(self):
         if self.last_update is None:
@@ -266,6 +272,11 @@ class Drone(object):
         for i, v in enumerate(self.shape.get_vertices()):
             vertices[(4 - i) & 3] = v.rotated(self.body.angle) + self.body.position
 
+        if self.forces is not None:
+            # Debug draw the lines
+            for force, jet, line in zip(self.forces, vertices[::3], self.jet_lines):
+                line.set(start=jet, end=jet - force)
+
         self.quad.set_all_vertices(vertices, box_level)
 
         elapsed = (globals.time - self.last_update) * globals.time_step
@@ -273,6 +284,7 @@ class Drone(object):
 
         if self.desired_field == 0:
             # decay the desired pos
+            self.desired_vector = Point(0, 0)
             if self.desired_shift.length() > self.min_desired:
                 self.desired_vector = self.desired_shift * -0.2
             else:
@@ -287,9 +299,37 @@ class Drone(object):
         self.desired_quad.set_vertices(
             self.desired_pos - Point(4, 4), self.desired_pos + Point(4, 4), drone_level + 1
         )
+        self.reset_forces()
+
+    def calculate_forces(self):
+        anti_grav = -globals.space.gravity * self.body.mass * 0.5
+        desired = self.desired_shift - self.body.velocity * 0.1
+
+        # If we want to go horizontal, we're going to have to try to get a rotation to make that happen
+        if abs(desired.x) > globals.epsilon:
+            print("oh no")
+
+        force = (0, (anti_grav + desired)[1])
+        self.forces = (force, force)
+
+    def reset_forces(self):
+        self.forces = None
+
+        # for line in self.jet_lines:
+        #    line.disable()
+
+    def apply_forces(self):
+        if self.forces is None:
+            self.calculate_forces()
+
+        for force, jet in zip(self.forces, self.jets):
+            self.body.apply_force_at_local_point(force, jet)
 
         # The drone is clever and will set the downward force of its two jets in order to get to the desired position.
         # In practice this is quite complicated. Hmm. Let's just do vertical for now
+        # print(self.body.force, self.body.mass, self.moment)
+        # self.body.apply_force_at_local_point(-globals.space.gravity * self.body.mass)
+        # print("af")
 
         # self.centre = self.body.position
         # final_vertices = []
@@ -333,9 +373,12 @@ class Drone(object):
 
 
 class Line(object):
+    # TODO: I haven't got lines in world coords working yet. Use a quad for now
     def __init__(self, parent, start, end, colour=(1, 0, 0, 1)):
         self.parent = parent
         self.line = drawing.Line(globals.line_buffer)
+        # self.line = drawing.Quad(globals.quad_buffer, tc=parent.atlas.texture_coords(debug_sprite_name))
+
         self.line.set_colour(colour)
 
         self.set(start, end)
@@ -355,7 +398,7 @@ class Line(object):
 
     def update(self):
         if self.start and self.end:
-            self.line.set_vertices(self.start, self.end, 6)
+            self.line.set_vertices(self.start, self.end, 8)
 
     def enable(self):
         self.line.enable()
@@ -653,7 +696,7 @@ class LevelZero(Level):
     text = "Deliver Stuff"
     name = "Introduction"
     subtext = "idk lol"
-    start_pos = Point(0, 350)
+    start_pos = Point(100, 350)
     items = []
     min_distance = 200
     min_force = 50
@@ -821,6 +864,10 @@ class GameView(ui.RootElement):
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
         self.ground = None
         self.drone = None
+
+        # self.test_line = Line(self, Point(0, 0), Point(0, 0))
+        # self.test_line.set(Point(48, 167), Point(48, 217))
+        # self.test_line.enable()
 
         # self.boxes = []
         # self.boxes.append(Box(self, Point(100,100), Point(200,200)))
@@ -1243,3 +1290,7 @@ class GameView(ui.RootElement):
         self.last_ball_pos = self.ball.body.position
         self.old_line.set(self.dragging_line.start, self.dragging_line.end)
         self.old_line.enable()
+
+    def apply_forces(self):
+        if self.drone:
+            self.drone.apply_forces()

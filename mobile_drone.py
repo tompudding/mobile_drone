@@ -37,6 +37,7 @@ def init():
     globals.screen_root = ui.UIRoot(Point(0, 0), globals.screen)
     globals.ui_state = ui.UIState()
     globals.time_step = 1
+    globals.epsilon = 0.001
 
     # Light stuff
     globals.shadow_lights = []
@@ -158,15 +159,16 @@ def main_run():
         iterations = 25
         dt = 1.0 / float(fps) / float(iterations)
         for x in range(iterations):  # 10 iterations to get a more stable simulation
+            globals.current_view.apply_forces()
             globals.space.step(dt)
 
         drawing.new_frame()
         globals.current_view.update(t)
         globals.current_view.draw()
 
-        drawing.draw_no_texture(globals.ui_buffer)
+        # drawing.draw_no_texture(globals.ui_buffer)
 
-        drawing.line_width(1)
+        drawing.line_width(2)
         drawing.draw_no_texture(globals.line_buffer)
 
         drawing.end_frame()
