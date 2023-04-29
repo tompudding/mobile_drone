@@ -214,6 +214,7 @@ class Drone(object):
     }
     desired_speed = 50
     max_desired = 20
+    min_desired = 3
 
     def __init__(self, parent, pos):
         self.parent = parent
@@ -270,6 +271,13 @@ class Drone(object):
         elapsed = (globals.time - self.last_update) * globals.time_step
         self.last_update = globals.time
 
+        if self.desired_field == 0:
+            # decay the desired pos
+            if self.desired_shift.length() > self.min_desired:
+                self.desired_vector = self.desired_shift * -0.2
+            else:
+                self.desired_shift = Point(0, 0)
+
         self.desired_shift += self.desired_vector * self.desired_speed * (elapsed / 1000)
         desired_length = self.desired_shift.length()
         if self.desired_shift.length() > self.max_desired:
@@ -292,6 +300,9 @@ class Drone(object):
 
     def update_desired_vector(self):
         self.desired_vector = Point(0, 0)
+        if self.desired_field == 0:
+            return
+
         for direction in Directions:
             if self.desired_field & direction:
                 self.desired_vector += self.vectors[direction]
