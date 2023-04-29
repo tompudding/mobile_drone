@@ -1,0 +1,1 @@
+resource/cursor/default.png:resource/cursor_atlas_0.png:0:42.0:13:22

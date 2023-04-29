@@ -1,0 +1,1 @@
+resource/ground/ground.png:resource/ground_atlas_0.png:0:896.0:128:128

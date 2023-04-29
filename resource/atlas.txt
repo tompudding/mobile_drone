@@ -1,0 +1,2 @@
+resource/sprites/ground.png:resource/atlas_0.png:0:896.0:128:128
+resource/sprites/box.png:resource/atlas_0.png:128:896.0:128:128
