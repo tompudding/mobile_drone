@@ -276,7 +276,7 @@ class Package(Box):
         # self.last_package_start = 0
 
     def jostle(self, amount):
-        self.damage += amount * self.fragility
+        self.damage += amount * self.fragility * 2
         if self.damage > self.max_damage and self.explosive:
             # TODO: Something for explosive boxes?
             pass
@@ -410,6 +410,7 @@ class House(Box):
         (Point(-10, 50), Point(135, 8), math.pi * 0.25),
         (Point(10, 50), Point(135, 8), -math.pi * 0.25),
     ]
+    light_data = [(Point(-90, -20), math.pi * 1.2), (Point(90, -20), -math.pi * 0.2)]
 
     def __init__(self, parent, pos, y=0, hack_factor=0.95):
         bl = Point(pos, y)
@@ -431,6 +432,8 @@ class House(Box):
         self.bodies = []
         self.moments = []
         self.shapes = []
+        self.lights = []
+        self.pos = centre
 
         for pos, size, angle in self.parts:
             bl = pos - size * 0.5
@@ -466,6 +469,10 @@ class House(Box):
             self.bodies.append(body)
             self.shapes.append(shape)
             self.moments.append(moment)
+
+        for pos, angle in self.light_data:
+            self.lights.append(FixedConeLight(self.pos + pos, angle, 0.7, (1, 1, 1)))
+
         self.in_world = True
 
     def update(self):
@@ -480,6 +487,8 @@ class House(Box):
         for body, shape in zip(self.bodies, self.shapes):
             globals.space.remove(body, shape)
         self.in_world = False
+        for light in self.lights:
+            light.delete()
 
 
 class Mailbox(House):
@@ -491,6 +500,7 @@ class Mailbox(House):
         (Point(0, -16), Point(4, 31), 0),
         (Point(0, 8), Point(15, 6), 0),
     ]
+    light_data = []
 
     def __init__(self, parent, box_num, pos, y=0):
         self.sprite_name = self.sprite_template.format(num=box_num, flag="")
@@ -755,6 +765,57 @@ class ConeLight(object):
         self.angle = pymunk.Vec2d(*(globals.mouse_world - self.pos)).angle
 
         self.refresh()
+
+    def delete(self):
+        self.quad.delete()
+        globals.cone_lights = [light for light in globals.cone_lights if light is not self]
+
+
+# This shouldn't be necessary but I don't have time to debug the other lights and the cone light seems to work
+class FixedConeLight:
+    width = 700
+    height = 700
+    z = 60
+
+    def __init__(self, pos, angle, width, colour):
+        self.quad_buffer = drawing.QuadBuffer(4)
+        self.quad = drawing.Quad(self.quad_buffer)
+        self.shadow_quad = globals.shadow_quadbuffer.new_light()
+        self.shadow_index = self.shadow_quad.shadow_index
+        self.colour = colour
+        self.initial_angle = angle
+        self.angle = angle
+        self.angle_width = width
+        self.on = True
+        self.pos = pos
+        self.world_pos = pos
+        self.refresh()
+        globals.cone_lights.append(self)
+
+    def refresh(self):
+        box = globals.scale * Point(self.width, self.height)
+        bl = Point(*self.pos[:2]) - box * 0.5
+        tr = bl + box
+        bl = bl.to_int()
+        tr = tr.to_int()
+        self.quad.set_vertices(bl, tr, 4)
+
+    @property
+    def screen_pos(self):
+        p = self.pos
+        out = (
+            (p[0] - globals.game_view.viewpos.pos.x) * globals.scale.x,
+            (p[1] - globals.game_view.viewpos.pos.y) * globals.scale.y,
+            self.z,
+        )
+        return out
+
+    def update(self):
+        pass
+
+    def delete(self):
+        self.quad.delete()
+        globals.cone_lights = [light for light in globals.cone_lights if light is not self]
 
 
 def hack_fix_tc(tc, hack_factor):
@@ -1264,6 +1325,8 @@ class Drone(object):
         self.quad.delete()
         for squirt in itertools.chain(self.left_squirters, self.right_squirters):
             squirt.delete()
+        for light in self.lights:
+            light.delete()
         globals.space.remove(self.body, self.shape)
 
 
