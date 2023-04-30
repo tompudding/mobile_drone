@@ -472,7 +472,7 @@ class Ground(object):
 
 
 class Drone(object):
-    sprite_name = "resource/sprites/drone.png"
+    sprite_name = "resource/sprites/drone_0.png"
     up_keys = {pygame.locals.K_w, pygame.locals.K_UP}
     down_keys = {pygame.locals.K_s, pygame.locals.K_DOWN}
     left_keys = {pygame.locals.K_a, pygame.locals.K_LEFT}
