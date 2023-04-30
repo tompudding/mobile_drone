@@ -280,6 +280,7 @@ class Package(Box):
         if self.damage > self.max_damage and self.explosive:
             # TODO: Something for explosive boxes?
             pass
+
         self.parent.update_jostle(self)
 
     def jostle_amount(self):
@@ -307,7 +308,8 @@ class Package(Box):
             if self.on_receiver is not None:
                 # We should credit the player with any time it's spent on this receiver
                 receive_time = globals.game_time - self.on_receiver
-                self.parent.package_start += receive_time
+                if self.parent.package_start:
+                    self.parent.package_start += receive_time
 
             self.on_receiver = None
 
@@ -331,8 +333,9 @@ class Package(Box):
         if self.on_receiver is not None:
             receive_time = globals.game_time - self.on_receiver
             if receive_time > self.receive_time:
-                self.on_receiver = None
                 self.parent.package_delivered(self)
+                self.on_receiver = None
+
             # else:
             # We don't count the time that the package is on the right receiver toward the delivery time
             # if self.parent.package_start is not None:
@@ -512,10 +515,23 @@ class Mailbox(House):
         # I can't seem to make it accept my hack factor. So hack the hack!
 
         self.flag_tc = parent.atlas.texture_coords(self.sprite_template.format(num=box_num, flag=f"_flag"))
+        self.current = self.normal_tc
+        self.last_flag = globals.time
 
     def set_flag(self, flag):
+        if globals.game_time - self.last_flag < 500:
+            return
+
         tc = self.flag_tc if flag else self.normal_tc
-        self.quad.set_texture_coordinates(tc)
+
+        if tc is not self.current:
+            if flag:
+                globals.sounds.flag.play()
+            else:
+                globals.sounds.flag_down.play()
+            self.quad.set_texture_coordinates(tc)
+            self.current = tc
+            self.last_flag = globals.game_time
 
 
 class Ground(object):
@@ -905,6 +921,7 @@ class Drone(object):
     squirt_distance = 80
     max_squirters = 100
     squirt_range = 0.6
+    sound_thresh = 100
 
     def __init__(self, parent, pos):
         self.parent = parent
@@ -927,6 +944,7 @@ class Drone(object):
         self.right_squirters = []
         self.last_squirt = [0, 0]
         self.squirt_delay = [0, 0]
+        self.last_sound_change = 0
 
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
@@ -952,6 +970,8 @@ class Drone(object):
         self.shape.collision_type = CollisionTypes.DRONE
         self.shape.parent = self
         globals.space.add(self.body, self.shape)
+        self.rotor_sound = None
+        self.charge_played = False
 
         # self.polar_vertices = [cmath.polar(v[0] + v[1] * 1j) for v in self.vertices]
 
@@ -1008,6 +1028,7 @@ class Drone(object):
                     colour=(1, 1, 1, 1),
                 )
             )
+            globals.sounds.anchor.play()
         # We also add an unseen stabilization joint
         # stable = pymunk.SlideJoint(self.body, item.body, (0, 0), (0, 0), 0, self.grab_range)
         # self.joints.append(stable)
@@ -1025,10 +1046,32 @@ class Drone(object):
         self.grabbed = None
         self.joints = []
         self.parent.release(self)
+        globals.sounds.release.play()
 
     def enable_turning(self):
         self.turning_enabled = True
         self.update_desired_vector()
+
+    def select_rotor_sound(self):
+        if globals.game_time - self.last_sound_change < self.sound_thresh:
+            return
+        sound = None
+        if self.engine:
+            # speed = self.body.velocity.length
+            # if speed > 140:
+            #     sound = globals.sounds.rotors_fast
+            # elif speed > 80:
+            #     sound = globals.sounds.rotors_normal
+            # else:
+            sound = globals.sounds.rotors_slow
+
+        if sound is not self.rotor_sound:
+            if self.rotor_sound:
+                self.rotor_sound.stop()
+            self.rotor_sound = sound
+            if self.rotor_sound:
+                self.rotor_sound.play(loops=-1)
+            self.last_sound_change = globals.game_time
 
     def update(self):
         self.pos = self.quad.get_centre()
@@ -1039,6 +1082,7 @@ class Drone(object):
             self.last_update = globals.game_time
             return
 
+        self.select_rotor_sound()
         if self.engine:
             for light in self.lights:
                 light.on = True
@@ -1118,6 +1162,9 @@ class Drone(object):
         if self.on_charger is not None:
             charge_time = globals.game_time - self.on_charger - 1000
             if charge_time > 0:
+                if not self.charge_played:
+                    globals.sounds.charging.play()
+                    self.charge_played = True
                 charge_amount = charge_time * self.charge_rate
                 new_power = self.start_power + charge_amount
                 self.add_power(new_power - self.power)
@@ -1161,6 +1208,9 @@ class Drone(object):
     def mark_on_charger(self, on_charger):
         if not on_charger:
             self.on_charger = None
+            if self.charge_played:
+                globals.sounds.charging.stop()
+                self.charge_played = False
             return
 
         if self.on_charger is None:
@@ -1365,85 +1415,6 @@ class Line(object):
 
     def delete(self):
         self.line.delete()
-
-
-class NextLevel(ui.HoverableBox):
-    line_width = 1
-
-    def __init__(self, parent, bl, tr):
-        self.border = drawing.QuadBorder(globals.ui_buffer, line_width=self.line_width)
-        super(NextLevel, self).__init__(parent, bl, tr, (0.05, 0.05, 0.05, 1))
-        self.text = ui.TextBox(
-            self,
-            Point(0, 0.5),
-            Point(1, 0.6),
-            "Well done!",
-            3,
-            colour=drawing.constants.colours.white,
-            alignment=drawing.texture.TextAlignments.CENTRE,
-        )
-        self.border.set_colour(drawing.constants.colours.red)
-        self.border.set_vertices(self.absolute.bottom_left, self.absolute.top_right)
-        self.border.enable()
-        self.replay_button = ui.TextBoxButton(self, "Replay", Point(0.1, 0.1), size=2, callback=self.replay)
-        self.continue_button = ui.TextBoxButton(
-            self, "Next Level", Point(0.7, 0.1), size=2, callback=self.next_level
-        )
-
-    def replay(self, pos):
-        self.parent.replay()
-        self.disable()
-
-    def next_level(self, pos):
-        self.parent.next_level()
-        self.disable()
-
-    def enable(self):
-        if not self.enabled:
-            self.root.register_ui_element(self)
-            self.border.enable()
-        super(NextLevel, self).enable()
-
-    def disable(self):
-        if self.enabled:
-            self.root.remove_ui_element(self)
-            self.border.disable()
-        super(NextLevel, self).disable()
-
-
-class DottedBox(ui.UIElement):
-    def __init__(self, parent, bl, tr):
-        super(DottedBox, self).__init__(parent, bl, tr)
-        # super(DottedBox, self).__init__(parent, bl, tr)
-        self.lines = []
-        seg_size = 5
-        for start, end in (
-            (self.absolute.bottom_left, self.absolute.bottom_right),
-            (self.absolute.bottom_right, self.absolute.top_right),
-            (self.absolute.top_right, self.absolute.top_left),
-            (self.absolute.top_left, self.absolute.bottom_left),
-        ):
-            num_segs = ((end - start).length()) / seg_size
-            seg = (end - start) / num_segs
-            for i in range(0, int(num_segs), 2):
-                line = drawing.Line(globals.line_buffer)
-                seg_start = start + seg * i
-                seg_end = start + seg * (i + 1)
-                line.set_colour((0.4, 0.4, 0.4, 1))
-                line.set_vertices(seg_start, seg_end, 6)
-                self.lines.append(line)
-
-    def disable(self):
-        for line in self.lines:
-            line.disable()
-
-    def enable(self):
-        for line in self.lines:
-            line.enable()
-
-    def delete(self):
-        for line in self.lines:
-            line.delete()
 
 
 def call_with(callback, arg):
@@ -1785,7 +1756,7 @@ def format_time(t):
 
 class Tutorial:
     stages = [
-        "Use WASD or the Array Keys to fly around",
+        "Use WASD or the Arrow Keys to fly around",
         "Press space to turn your engines off and on again",
         "Fly onto the charging platform and turn off your engines to regain power",
         "Pick up a package by flying over it and clicking with the left mouse",
@@ -2241,6 +2212,7 @@ class GameView(ui.RootElement):
                 continue
             package = shape.parent
             package.jostle(arbiter.total_ke / 300)
+            globals.sounds.bang.play()
 
         return True
 
@@ -2378,11 +2350,22 @@ class GameView(ui.RootElement):
 
     def score_for_package(self, package, time):
         score = max(package.max_damage - package.damage, 0)
+        played_sound = False
+        if score == 0:
+            globals.sounds.broken.play()
+            played_sound = True
 
         score += max((5000 + time) / 20, 0)
 
-        if package.damage == 0 and time > 0:
+        damage_ratio = package.damage / package.max_damage
+
+        if damage_ratio < 0.01 and time > 0:
+            globals.sounds.perfect.play()
+            played_sound = True
             score *= 2
+
+        if not played_sound and damage_ratio < 0.5:
+            globals.sounds.thank_you.play()
 
         return int(score * 10)
 
