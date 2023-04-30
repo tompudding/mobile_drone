@@ -60,7 +60,7 @@ class ViewPos(object):
     shake_radius = 10
 
     def __init__(self, point):
-        self._pos = point
+        self._pos = point - (globals.screen / globals.scale) * 0.5
         self.no_target()
         self.follow = None
         self.follow_locked = False
@@ -68,7 +68,7 @@ class ViewPos(object):
         self.shake_end = None
         self.shake_duration = 1
         self.shake = Point(0, 0)
-        self.last_update = globals.time
+        self.last_update = None
 
     def no_target(self):
         self.target = None
@@ -132,6 +132,9 @@ class ViewPos(object):
     def update(
         self,
     ):
+        if self.last_update is None:
+            self.last_update = globals.time
+            return
         self.t = globals.time
         elapsed = globals.time - self.last_update
         self.last_update = globals.time
@@ -1278,7 +1281,7 @@ class GameView(ui.RootElement):
         # globals.ui_atlas = drawing.texture.TextureAtlas('ui_atlas_0.png','ui_atlas.txt',extra_names=False)
         super(GameView, self).__init__(Point(0, 0), globals.screen)
         self.timeofday = TimeOfDay(0.5)
-        self.viewpos = ViewPos(Point(0, 0))
+        self.viewpos = ViewPos(LevelZero.start_pos)
         self.mouse_pos = Point(0, 0)
 
         # For the ambient light
