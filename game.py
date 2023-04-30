@@ -1273,6 +1273,36 @@ class GameView(ui.RootElement):
         self.thrust_slider.set_pointer()
         self.thrust_slider.enable()
 
+        self.bottom_bar.time_text = ui.TextBox(
+            self.bottom_bar,
+            Point(0.41, 0),
+            Point(0.41 + 0.2, 0.28),
+            "Package Time",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
+        self.bottom_bar.score_num_text = ui.TextBox(
+            self.bottom_bar,
+            Point(0.71, 0.3),
+            Point(0.71 + 0.2, 0.88),
+            "0",
+            3,
+            colour=drawing.constants.colours.yellow,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
+        self.bottom_bar.score_text = ui.TextBox(
+            self.bottom_bar,
+            Point(0.71, 0),
+            Point(0.71 + 0.2, 0.28),
+            "Score",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
         self.help_text = ui.TextBox(
             self,
             Point(0, 0),
@@ -1388,6 +1418,7 @@ class GameView(ui.RootElement):
         self.chargers = []
 
         self.level_text = None
+        self.score = 0
 
         self.bottom_handler = globals.space.add_collision_handler(CollisionTypes.DRONE, CollisionTypes.BOTTOM)
         self.box_handler = globals.space.add_collision_handler(CollisionTypes.BOX, CollisionTypes.BOTTOM)
@@ -1413,7 +1444,7 @@ class GameView(ui.RootElement):
             LevelZero(),
         ]
 
-        self.main_menu = MainMenu(self, Point(0.2, 0.1), Point(0.8, 0.9))
+        self.main_menu = MainMenu(self, Point(0.2, 0.3), Point(0.8, 0.7))
 
         self.paused = True
         self.current_level = 0
@@ -1502,6 +1533,7 @@ class GameView(ui.RootElement):
         raise SystemExit()
 
     def init_level(self):
+        self.score = 0
         if self.level_text:
             self.level_text.delete()
 
@@ -1602,8 +1634,18 @@ class GameView(ui.RootElement):
         self.packages.append(package)
         self.help_text.set_text("Grab the next package")
 
+    def score_for_package(self, package):
+        score = package.max_damage - package.damage
+
+        if package.damage == 0:
+            score *= 2
+
+        return int(score * 10)
+
     def package_delivered(self, delivered_package):
         print("Package delivered!")
+        self.score += self.score_for_package(delivered_package)
+        self.bottom_bar.score_num_text.set_text(f"{self.score}", colour=drawing.constants.colours.yellow)
         self.packages = [package for package in self.packages if package is not delivered_package]
         if self.drone and self.drone.grabbed is delivered_package:
             self.drone.release()
