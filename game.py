@@ -403,7 +403,7 @@ class Ground(object):
         self.height = height
 
         # TODO: Put proper lower bounds on so we don't fall off. Also make this a ui object so we can use its absolute bounds easier?
-        self.bottom_left = Point(0, -self.height)
+        self.bottom_left = Point(-300, -self.height)
         self.top_right = Point(128 * 100, 0)
         self.top_left = Point(self.bottom_left.x, 0)
         self.bottom_right = Point(self.top_right.x, self.bottom_left.y)
@@ -427,7 +427,7 @@ class Ground(object):
             quad.set_vertices(pos, pos + quad_size, ground_level)
             self.quads.append(quad)
 
-            pos.x += subimage.size.x
+            pos.x += subimage.size.x - 1
 
         # The ground is a simple static horizontal line (for now)
 
@@ -447,7 +447,7 @@ class Ground(object):
         self.segments = [self.segment]
 
         for (start, end) in (
-            (self.bottom_left, self.ceiling_left),
+            (self.bottom_left + Point(300, 0), self.ceiling_left),
             (self.ceiling_left, self.ceiling_right),
             (self.ceiling_right, self.bottom_right),
         ):
@@ -469,6 +469,39 @@ class Ground(object):
     def delete(self):
         for segment in self.segments:
             globals.space.remove(segment)
+
+
+class Sky(object):
+    sprite_name = "resource/sprites/sky.png"
+
+    def __init__(self, parent):
+        self.parent = parent
+
+        self.bottom_left = Point(-300, 0)
+        self.top_right = Point(128 * 100, 1000)
+        self.top_left = Point(self.bottom_left.x, 1000)
+        self.bottom_right = Point(self.top_right.x, self.bottom_left.y)
+        self.size = self.top_right - self.bottom_left
+
+        # Typically we'd do this with a single quad and adjust the texture coords for a repeat, (it really
+        # ought to get drawn first too otherwise it's going to look really weird with the lighting, TODO)
+
+        subimage = parent.atlas.subimage(self.sprite_name)
+        tc = parent.atlas.texture_coords(self.sprite_name)
+
+        pos = Point(*self.bottom_left)
+        self.quads = []
+
+        quad_size = Point(subimage.size.x, self.size.y)
+
+        while pos.x < self.top_right.x:
+            quad = drawing.Quad(globals.quad_buffer, tc=tc)
+            quad.set_vertices(pos, pos + quad_size, ground_level)
+            self.quads.append(quad)
+
+            pos.x += subimage.size.x
+
+        # The ground is a simple static horizontal line (for now)
 
 
 class Drone(object):
@@ -1128,7 +1161,7 @@ class PackageInfo:
 class Level(object):
     disappear = False
     min_distance = 300
-    ground_height = 100
+    ground_height = 300
     restricted_start = None
     boxes_pos_fixed = False
     infinite = False
@@ -1418,6 +1451,7 @@ class GameView(ui.RootElement):
         # For the ambient light
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
         self.ground = Ground(self, TutorialLevel.ground_height)
+        self.sky = Sky(self)
         self.light = drawing.Quad(globals.light_quads)
         self.light.set_vertices(self.ground.bottom_left, self.ground.ceiling_right, 0)
 
