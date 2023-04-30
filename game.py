@@ -505,7 +505,7 @@ class Sky(object):
 
 
 class Drone(object):
-    sprite_name = "resource/sprites/drone_0.png"
+    sprite_names = [f"resource/sprites/drone_{i}.png" for i in range(4)]
     up_keys = {pygame.locals.K_w, pygame.locals.K_UP}
     down_keys = {pygame.locals.K_s, pygame.locals.K_DOWN}
     left_keys = {pygame.locals.K_a, pygame.locals.K_LEFT}
@@ -529,13 +529,15 @@ class Drone(object):
     power_consumption = 0.01
     charge_rate = 0.01
     power_max = 100
+    fps = 25
+    frame_delta = 1000 / fps
 
     def __init__(self, parent, pos):
         self.parent = parent
         self.quad = drawing.Quad(globals.quad_buffer)
-        self.quad.set_texture_coordinates(parent.atlas.texture_coords(self.sprite_name))
+        self.tcs = [parent.atlas.texture_coords(sprite_name) for sprite_name in self.sprite_names]
 
-        self.size = parent.atlas.subimage(self.sprite_name).size
+        self.size = parent.atlas.subimage(self.sprite_names[0]).size
         # pos = to_world_coords(pos)
         self.bottom_left = pos
         self.top_right = pos + self.size
@@ -546,6 +548,7 @@ class Drone(object):
         self.on_charger = None
         self.start_power = 0
         self.thrust = self.max_desired
+        self.quad.set_texture_coordinates(self.tcs[0])
 
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
@@ -648,6 +651,12 @@ class Drone(object):
         if self.last_update is None:
             self.last_update = globals.game_time
             return
+
+        if self.engine:
+            tc = int((globals.game_time // self.frame_delta) % len(self.tcs))
+
+            tc = self.tcs[tc]
+            self.quad.set_texture_coordinates(tc)
 
         if self.on_ground is not None:
             on_ground_time = globals.game_time - self.on_ground
