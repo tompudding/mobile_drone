@@ -358,26 +358,6 @@ class Receiver(Box):
 
         self.id = id
 
-        name_bl = bl - Point(0, 10)
-        name_tr = name_bl + Point(40, 10)
-        self.name_quad = drawing.Quad(globals.quad_buffer)
-
-        self.name_quad.set_vertices(name_bl, name_tr, box_level)
-        self.name_tc = parent.atlas.texture_coords(self.name_name % self.id)
-        self.name_quad.set_texture_coordinates(self.name_tc)
-
-    def enable(self):
-        super().enable()
-        self.name_quad.enable()
-
-    def disable(self):
-        super().disable()
-        self.name_quad.disable()
-
-    def delete(self):
-        super().delete()
-        self.name_quad.delete()
-
 
 class Charger(Box):
     sprite_name = "resource/sprites/charger.png"
@@ -423,7 +403,7 @@ class House(Box):
     is_package = False
     collision_type = CollisionTypes.WALL
     body_type = pymunk.Body.STATIC
-    hack_factor = 0.99
+    hack_factor = 0.95
 
     parts = [
         (Point(0, -60), Point(175, 81), 0),
@@ -431,7 +411,7 @@ class House(Box):
         (Point(10, 50), Point(135, 8), -math.pi * 0.25),
     ]
 
-    def __init__(self, parent, pos, y=0):
+    def __init__(self, parent, pos, y=0, hack_factor=0.95):
         bl = Point(pos, y)
         tr = bl + self.size
         self.parent = parent
@@ -440,7 +420,7 @@ class House(Box):
         self.quad = drawing.Quad(globals.quad_buffer)
         self.quad.set_vertices(bl, tr, house_level)
         self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
-        hack_fix_tc(self.normal_tc, 0.95)
+        hack_fix_tc(self.normal_tc, hack_factor)
 
         self.quad.set_texture_coordinates(self.normal_tc)
 
@@ -503,18 +483,30 @@ class House(Box):
 
 
 class Mailbox(House):
-    sprite_template = "resource/sprites/mailbox_{num}.png"
+    sprite_template = "resource/sprites/mailbox_{num}{flag}.png"
     size = Point(32, 64)
-    hack_factor = 0.99
+    hack_factor = None
 
     parts = [
-        (Point(0, -16), Point(4, 32), 0),
-        (Point(0, 8), Point(16, 8), 0),
+        (Point(0, -16), Point(4, 31), 0),
+        (Point(0, 8), Point(15, 6), 0),
     ]
 
     def __init__(self, parent, box_num, pos, y=0):
-        self.sprite_name = self.sprite_template.format(num=box_num)
-        super().__init__(parent, pos, y)
+        self.sprite_name = self.sprite_template.format(num=box_num, flag="")
+        self.id = box_num
+        super().__init__(parent, pos, y, hack_factor=None)
+
+        self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
+        self.quad.set_texture_coordinates(self.normal_tc)
+
+        # I can't seem to make it accept my hack factor. So hack the hack!
+
+        self.flag_tc = parent.atlas.texture_coords(self.sprite_template.format(num=box_num, flag=f"_flag"))
+
+    def set_flag(self, flag):
+        tc = self.flag_tc if flag else self.normal_tc
+        self.quad.set_texture_coordinates(tc)
 
 
 class Ground(object):
@@ -1420,7 +1412,7 @@ class MainMenu(ui.HoverableBox):
             self,
             Point(0, 0.0),
             Point(1, 0.05),
-            "This is some helpful text. Escape for main menu",
+            "Lower your thrust for fragile items. Escape for main menu",
             1.5,
             colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.CENTRE,
@@ -1620,17 +1612,17 @@ class LevelOne(Level):
     items = [
         PackageInfo(contents="Plastic Minis", size=Point(40, 40), target=0, max_speed=100, time=20),
         PackageInfo(
-            contents="Glass", size=Point(40, 40), target=1, density=0.5, max_speed=10, time=30, fragility=4.0
+            contents="Glass", size=Point(40, 40), target=1, density=0.5, max_speed=10, time=35, fragility=4.0
         ),
-        PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=29),
-        PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+        PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=35),
+        PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=24),
         PackageInfo(
             contents="TTRPG Books",
             size=Point(30, 30),
             target=2,
             max_speed=50,
             density=5.5,
-            time=50,
+            time=60,
             fragility=2.0,
         ),
     ]
@@ -1737,7 +1729,7 @@ class Tutorial:
         "Pick up a package by flying over it and clicking with the left mouse",
         "Release it by clicking anywhere with the left mouse",
         "Adjust your thrust with the scroll wheel or the slider",
-        "Deliver it to the target platform. Going to fast or collisions will damage it and reduce your score, as will being late",
+        "Deliver it to the target platform. Going too fast or collisions will damage it and reduce your score, as will being late",
         "Well done",
     ]
 
@@ -2035,6 +2027,7 @@ class GameView(ui.RootElement):
         self.houses = []
         self.fences = []
         self.chargers = []
+        self.mailbox_lookup = {}
         self.tutorial = None
 
         self.level_text = None
@@ -2149,6 +2142,7 @@ class GameView(ui.RootElement):
             receiver, package = package, receiver
 
         package.mark_on_receiver(True)
+        package.parent.set_mailbox_flag(package.id, True)
 
         return True
 
@@ -2162,6 +2156,7 @@ class GameView(ui.RootElement):
             receiver, package = package, receiver
 
         package.mark_on_receiver(False)
+        package.parent.set_mailbox_flag(package.id, False)
 
         return True
 
@@ -2231,12 +2226,16 @@ class GameView(ui.RootElement):
         if level.tutorial:
             self.tutorial = Tutorial(self)
 
+        self.mailbox_lookup = {}
+
         # We're going to generate a random package for delivery
 
         for i, pos in enumerate(level.receivers):
             self.receivers.append(Receiver(self, pos, id=i))
             self.houses.append(House(self, pos + 50, 0))
-            self.houses.append(Mailbox(self, i, pos - 50, 0))
+            mailbox = Mailbox(self, i, pos - 50, 0)
+            self.houses.append(mailbox)
+            self.mailbox_lookup[mailbox.id] = mailbox
 
         # Hack, put some fences up the left side
         for y in range(0, 1000, Fence.size.y):
@@ -2284,6 +2283,9 @@ class GameView(ui.RootElement):
         #    self.cup.remove_line()
         # else:
         #    self.cup.reset_line()
+
+    def set_mailbox_flag(self, id, state):
+        self.mailbox_lookup[id].set_flag(state)
 
     def create_package(self, info):
         self.current_info = info

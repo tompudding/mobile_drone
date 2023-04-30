@@ -103,7 +103,6 @@ def main_run():
         t = pygame.time.get_ticks()
         fps = clock.get_fps()
         if t - last > 1000:
-            print("FPS:", fps)
             last = t
 
         globals.t = globals.time = t
