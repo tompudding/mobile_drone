@@ -828,10 +828,20 @@ class Drone(object):
         self.update_desired_vector()
 
     def disable(self):
+        for line in itertools.chain(self.jet_lines, self.anchors):
+            line.disable()
         self.quad.disable()
 
     def enable(self):
+        for line in itertools.chain(self.jet_lines, self.anchors):
+            line.enable()
         self.quad.enable()
+
+    def delete(self):
+        for line in itertools.chain(self.jet_lines, self.anchors):
+            line.delete()
+        self.quad.delete()
+        globals.space.remove(self.body, self.shape)
 
 
 class Line(object):
@@ -1012,8 +1022,8 @@ class MainMenu(ui.HoverableBox):
             # if not self.parent.done[i]:
             #     self.ticks[i].disable()
 
-        #     pos.y -= 0.1
-        #     self.level_buttons.append(button)
+            pos.y -= 0.1
+            self.level_buttons.append(button)
 
     def start_level(self, pos, level):
         self.disable()
@@ -1084,14 +1094,6 @@ class GameOver(ui.HoverableBox):
         super(GameOver, self).disable()
 
 
-class Level(object):
-    disappear = False
-    min_distance = 300
-    ground_height = 100
-    restricted_start = None
-    boxes_pos_fixed = False
-
-
 @dataclass
 class PackageInfo:
     contents: str
@@ -1102,9 +1104,77 @@ class PackageInfo:
     density: float = 1.0
 
 
-class LevelZero(Level):
+class Level(object):
+    disappear = False
+    min_distance = 300
+    ground_height = 100
+    restricted_start = None
+    boxes_pos_fixed = False
+    infinite = False
+
+    prebuilts = [
+        PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30),
+        PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
+        PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
+        PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
+        PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+    ]
+
+    def get_random_package(self):
+        # let's have a 40 % chance of a pre-built
+        index = random.randint(1, 12)
+        try:
+            return self.prebuilts[index]
+        except IndexError:
+            pass
+
+        return PackageInfo(
+            contents=random.choice(
+                [
+                    "Cheese",
+                    "Widgets",
+                    "Cabbage",
+                    "Live Animals",
+                    "Human Hair",
+                    "Unicycles",
+                    "Cork",
+                    "Headphones",
+                    "Chewing Gum",
+                    "Lasers",
+                    "Black Holes",
+                    "Candy Floss",
+                    "Marmite",
+                ]
+            ),
+            size=Point(random.randint(20, 50), random.randint(20, 50)),
+            target=0,
+            max_speed=random.randint(10, 100),
+            time=random.randint(12, 30),
+        )
+
+
+class Tutorial(Level):
     text = "Deliver Stuff"
-    name = "Introduction"
+    name = "Tutorial"
+    subtext = "idk lol"
+    start_pos = Point(100 + offset, 50)
+    items = [
+        PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30),
+        PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
+        PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
+        PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
+        PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+    ]
+    receivers = [600]
+    chargers = [20]
+    fences = []
+    min_distance = 200
+    min_force = 50
+
+
+class LevelOne(Level):
+    text = "Deliver Stuff"
+    name = "Deliver Items"
     subtext = "idk lol"
     start_pos = Point(100 + offset, 50)
     items = [
@@ -1114,88 +1184,25 @@ class LevelZero(Level):
         # PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
         PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
     ]
-    receivers = [600 + i * 500 for i in range(10)]
+    receivers = [600 + i * 500 for i in range(5)]
     chargers = [20]
     fences = [400]
     min_distance = 200
     min_force = 50
 
 
-class LevelOne(Level):
-    text = "Level 1: Bounce the ball off the box first"
-    name = "Box Bounce"
-    subtext = "Left drag to move the box, right drag to rotate"
-    items = [(Box, Point(100, 100), Point(200, 200))]
-    min_distance = 300
-    min_force = 50
-
-
 class LevelTwo(Level):
-    text = "Level 2: Bounce the ball off both boxes. Keep the streak alive!"
-    name = "Two boxes"
-    subtext = "Left drag to move, right drag to rotate"
-    items = [(Box, Point(100, 100), Point(200, 200)), (Box, Point(300, 100), Point(400, 200))]
-    min_distance = 300
-    min_force = 0
-
-
-class LevelThree(Level):
-    text = "Level 3: Keep the streak alive!"
-    name = "Three boxes"
-    subtext = "Left drag to move, right drag to rotate"
-    items = [
-        (Box, Point(100, 100), Point(200, 200)),
-        (Box, Point(300, 100), Point(400, 200)),
-        (Box, Point(500, 100), Point(600, 200)),
-    ]
-    min_distance = 300
-    min_force = 0
-
-
-class LevelFour(Level):
-    text = "Level 4: Keep the streak alive!"
-    name = "Three Disappearing Boxes"
-    disappear = True
-    subtext = "Boxes disappear when hit"
-    items = [
-        (Box, Point(100, 100), Point(200, 200)),
-        (Box, Point(300, 100), Point(400, 200)),
-        (Box, Point(500, 100), Point(600, 200)),
-    ]
-    min_distance = 300
-    min_force = 0
-
-
-class LevelFive(Level):
-    text = "Level 5: Keep the streak alive!"
-    name = "Harderer"
-    subtext = "Shoot from the grey box"
-    items = [
-        (Box, Point(100, 100), Point(200, 200)),
-        (Box, Point(300, 100), Point(400, 200)),
-        (Box, Point(500, 100), Point(600, 200)),
-    ]
-    min_distance = 300
-    restricted_start = (Point(0.75, 0.1), Point(0.97, 0.25))
-    min_force = 0
-
-
-class LevelSix(Level):
-    text = "Level 5: Keep the streak alive!"
-    name = "Hardestest"
-    disappear = False
-    subtext = "Now you can't move the boxes (only rotate). Good luck!"
-    items = [
-        (Box, Point(423, 619) - Point(50, 50), Point(423, 619) + Point(50, 50)),
-        (Box, Point(912, 637) - Point(50, 50), Point(912, 637) + Point(50, 50)),
-        (Box, Point(736, -7) - Point(50, 50), Point(736, -7) + Point(50, 50)),
-        (Box, Point(518, -1) - Point(50, 50), Point(518, -1) + Point(50, 50)),
-        (Box, Point(733, 560) - Point(50, 50), Point(733, 560) + Point(50, 50)),
-    ]
-    min_distance = 300
-    min_force = 0
-    restricted_start = (Point(0.75, 0.1), Point(0.97, 0.25))
-    boxes_pos_fixed = True
+    text = "There's always another package"
+    name = "Free Flying"
+    infinite = True
+    subtext = "idk lol"
+    start_pos = Point(100 + offset, 50)
+    items = []
+    receivers = [600 + i * 500 for i in range(5)]
+    chargers = [20]
+    fences = [400]
+    min_distance = 200
+    min_force = 50
 
 
 class TimeOfDay(object):
@@ -1281,12 +1288,12 @@ class GameView(ui.RootElement):
         # globals.ui_atlas = drawing.texture.TextureAtlas('ui_atlas_0.png','ui_atlas.txt',extra_names=False)
         super(GameView, self).__init__(Point(0, 0), globals.screen)
         self.timeofday = TimeOfDay(0.5)
-        self.viewpos = ViewPos(LevelZero.start_pos)
+        self.viewpos = ViewPos(Tutorial.start_pos)
         self.mouse_pos = Point(0, 0)
 
         # For the ambient light
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
-        self.ground = Ground(self, LevelZero.ground_height)
+        self.ground = Ground(self, Tutorial.ground_height)
         self.light = drawing.Quad(globals.light_quads)
         self.light.set_vertices(self.ground.bottom_left, self.ground.ceiling_right, 0)
 
@@ -1316,6 +1323,8 @@ class GameView(ui.RootElement):
         self.thrust_slider.index = int(len(self.thrust_points) // 2)
         self.thrust_slider.set_pointer()
         self.thrust_slider.enable()
+        self.next_level_menu = None
+        self.game_over = None
 
         self.bottom_bar.time_text = ui.TextBox(
             self.bottom_bar,
@@ -1521,7 +1530,9 @@ class GameView(ui.RootElement):
         self.charger_handler.separate = self.charger_end
 
         self.levels = [
-            LevelZero(),
+            Tutorial(),
+            LevelOne(),
+            LevelTwo(),
         ]
 
         self.main_menu = MainMenu(self, Point(0.2, 0.3), Point(0.8, 0.7))
@@ -1667,6 +1678,7 @@ class GameView(ui.RootElement):
             charger.delete()
 
         self.fences = []
+        self.chargers = []
 
         # We're going to generate a random package for delivery
 
@@ -1679,7 +1691,14 @@ class GameView(ui.RootElement):
         for pos in level.chargers:
             self.chargers.append(Charger(self, pos, id=0))
 
-        package_info = level.items.pop(0)
+        self.level_items = level.items[::]
+
+        try:
+            package_info = self.level_items.pop(0)
+        except IndexError:
+            # An initial empty list means random!
+            package_info = level.get_random_package()
+            package_info.target = random.randint(0, len(self.receivers) - 1)
         self.create_package(package_info)
 
         # if self.ground:
@@ -1747,40 +1766,19 @@ class GameView(ui.RootElement):
         level = self.levels[self.current_level]
 
         if len(level.items) == 0:
-            self.end_game()
-            return
-
-        info = level.items.pop(0)
+            if level.infinite:
+                info = level.get_random_package()
+                info.target = random.randint(0, len(self.receivers) - 1)
+            else:
+                self.next_level()
+                return
+        else:
+            info = self.level_items.pop(0)
         self.create_package(info)
 
     def end_game(self):
         self.game_over = GameOver(self, Point(0.2, 0.2), Point(0.8, 0.8))
         self.paused = True
-
-    def cup_hit(self, arbiter, space, data):
-        if self.paused:
-            return True
-
-        if not all(box.touched for box in self.boxes):
-            self.bottom_hit(arbiter, space, data)
-            return True
-
-        # for i,box in enumerate(self.boxes):
-        #    print(i,box.body.position,box.body.angle)
-        #    print(self.last_throw)
-
-        self.paused = True
-        self.done[self.current_level] = True
-        globals.sounds.win.play()
-
-        if self.current_level + 1 >= len(self.levels):
-            self.end_game()
-        else:
-            self.next_level_menu.enable()
-        self.level_text.disable()
-        if self.sub_text:
-            self.sub_text.disable()
-        return True
 
     def box_hit(self, arbiter, space, data):
         if not self.thrown:
@@ -1806,11 +1804,10 @@ class GameView(ui.RootElement):
             for i in range(100)
         ]
 
-        info = level.items.pop(0)
+        info = self.level_items.pop(0)
         self.create_package(info)
 
     def next_level(self):
-        self.stop_throw()
         self.current_level += 1
         self.init_level()
         self.paused = False
