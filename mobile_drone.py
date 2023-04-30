@@ -155,13 +155,11 @@ def main_run():
             last = t
 
         globals.t = globals.time = t
+
         if fps == 0:
             fps = 50
         iterations = 25
-        globals.dt = dt = 1.0 / float(fps) / float(iterations)
-        for x in range(iterations):  # 10 iterations to get a more stable simulation
-            globals.current_view.apply_forces()
-            globals.space.step(dt)
+        globals.dt = 1.0 / float(fps) / float(iterations)
 
         drawing.new_frame()
         globals.current_view.update(t)

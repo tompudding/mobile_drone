@@ -86,7 +86,7 @@ class ViewPos(object):
         self.no_target()
 
     def screen_shake(self, duration):
-        self.shake_end = globals.time + duration
+        self.shake_end = globals.game_time + duration
         self.shake_duration = float(duration)
 
     def set_target(self, point, rate=2, callback=None):
@@ -98,7 +98,7 @@ class ViewPos(object):
         self.target = point.to_int()
         self.target_change = self.target - self._pos
         self.start_point = self._pos
-        self.start_time = globals.time
+        self.start_time = globals.game_time
         self.duration = self.target_change.length() / rate
         self.callback = callback
         if self.duration < 200:
@@ -110,7 +110,7 @@ class ViewPos(object):
         Follow the given actor around.
         """
         self.follow = actor
-        self.follow_start = globals.time
+        self.follow_start = globals.game_time
         self.follow_locked = False
 
     def has_target(self):
@@ -133,15 +133,15 @@ class ViewPos(object):
         self,
     ):
         if self.last_update is None:
-            self.last_update = globals.time
+            self.last_update = globals.game_time
             return
-        self.t = globals.time
-        elapsed = globals.time - self.last_update
-        self.last_update = globals.time
-        t = globals.time
+        self.t = globals.game_time
+        elapsed = globals.game_time - self.last_update
+        self.last_update = globals.game_time
+        t = globals.game_time
 
         if self.shake_end:
-            if globals.time >= self.shake_end:
+            if globals.game_time >= self.shake_end:
                 self.shake_end = None
                 self.shake = Point(0, 0)
             else:
@@ -247,6 +247,7 @@ class Package(Box):
     def __init__(self, parent, bl, tr, info):
         super().__init__(parent, bl, tr, density_factor=info.density)
         self.id = info.target
+        self.fragility = info.fragility
         self.max_speed = info.max_speed
         self.contents = info.contents
         self.collision_impulse = Point(0, 0)
@@ -256,7 +257,7 @@ class Package(Box):
         # self.last_package_start = 0
 
     def jostle(self, amount):
-        self.damage += amount
+        self.damage += amount * self.fragility
         if self.damage > self.max_damage and self.explosive:
             # TODO: Something for explosive boxes?
             pass
@@ -286,7 +287,7 @@ class Package(Box):
         if not on_receiver:
             if self.on_receiver is not None:
                 # We should credit the player with any time it's spent on this receiver
-                receive_time = globals.time - self.on_receiver
+                receive_time = globals.game_time - self.on_receiver
                 self.parent.package_start += receive_time
 
             self.on_receiver = None
@@ -294,7 +295,7 @@ class Package(Box):
             return
 
         if self.on_receiver is None:
-            self.on_receiver = globals.time
+            self.on_receiver = globals.game_time
 
     def get_speed(self):
         # return self.body.velocity.length
@@ -303,13 +304,13 @@ class Package(Box):
 
     def update(self):
         if self.last_update is None:
-            self.last_update = globals.time
+            self.last_update = globals.game_time
             return
 
         super().update()
 
         if self.on_receiver is not None:
-            receive_time = globals.time - self.on_receiver
+            receive_time = globals.game_time - self.on_receiver
             if receive_time > self.receive_time:
                 self.on_receiver = None
                 self.parent.package_delivered(self)
@@ -563,7 +564,6 @@ class Drone(object):
         self.anchors = []
         self.joints = []
         for our_anchor, item_anchor in zip(self.anchor_points, item.anchor_points()):
-            print(f"{our_anchor=} {item_anchor=}")
             joint = pymunk.SlideJoint(
                 self.body, item.body, anchor_a=our_anchor, anchor_b=item_anchor, min=0, max=self.grab_range
             )
@@ -601,11 +601,11 @@ class Drone(object):
 
     def update(self):
         if self.last_update is None:
-            self.last_update = globals.time
+            self.last_update = globals.game_time
             return
 
         if self.on_ground is not None:
-            on_ground_time = globals.time - self.on_ground
+            on_ground_time = globals.game_time - self.on_ground
             if on_ground_time > 1000:
                 self.engine = False
                 self.on_ground = None
@@ -622,8 +622,8 @@ class Drone(object):
 
         self.quad.set_all_vertices(vertices, box_level)
 
-        elapsed = (globals.time - self.last_update) * globals.time_step
-        self.last_update = globals.time
+        elapsed = (globals.game_time - self.last_update) * globals.time_step
+        self.last_update = globals.game_time
 
         if self.grabbed:
             # show the current package speed
@@ -637,7 +637,7 @@ class Drone(object):
                 self.grabbed.jostle(overspeed * 5 * elapsed / 1000)
 
         if self.on_charger is not None:
-            charge_time = globals.time - self.on_charger - 1000
+            charge_time = globals.game_time - self.on_charger - 1000
             if charge_time > 0:
                 charge_amount = charge_time * self.charge_rate
                 new_power = self.start_power + charge_amount
@@ -685,7 +685,7 @@ class Drone(object):
             return
 
         if self.on_charger is None:
-            self.on_charger = globals.time
+            self.on_charger = globals.game_time
             self.start_power = self.power
 
     def add_power(self, amount):
@@ -998,9 +998,10 @@ class MainMenu(ui.HoverableBox):
         self.border.set_vertices(self.absolute.bottom_left, self.absolute.top_right)
         self.border.enable()
         self.quit_button = ui.TextBoxButton(self, "Quit", Point(0.45, 0.1), size=2, callback=self.parent.quit)
-        # self.continue_button = ui.TextBoxButton(self, 'Next Level', Point(0.7, 0.1), size=2, callback=self.next_level)
+        self.resume_button = ui.TextBoxButton(self, "Resume", Point(0.7, 0.1), size=2, callback=self.resume)
+        self.resume_button.disable()
 
-        pos = Point(0.2, 0.8)
+        pos = Point(0.2, 0.7)
         for i, level in enumerate(parent.levels):
             button = ui.TextBoxButton(
                 self,
@@ -1025,12 +1026,16 @@ class MainMenu(ui.HoverableBox):
             pos.y -= 0.1
             self.level_buttons.append(button)
 
+    def resume(self, pos):
+        self.parent.unpause()
+        self.disable()
+
     def start_level(self, pos, level):
         self.disable()
         self.parent.current_level = level
         self.parent.init_level()
         # self.parent.stop_throw()
-        self.parent.paused = False
+        self.parent.unpause()
 
     def enable(self):
         if not self.enabled:
@@ -1102,6 +1107,7 @@ class PackageInfo:
     max_speed: int
     time: float
     density: float = 1.0
+    fragility: float = 1.0
 
 
 class Level(object):
@@ -1113,7 +1119,9 @@ class Level(object):
     infinite = False
 
     prebuilts = [
-        PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30),
+        PackageInfo(
+            contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30, fragility=4.0
+        ),
         PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
         PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
         PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
@@ -1159,7 +1167,9 @@ class Tutorial(Level):
     subtext = "idk lol"
     start_pos = Point(100 + offset, 50)
     items = [
-        PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30),
+        PackageInfo(
+            contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30, fragility=4.0
+        ),
         PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
         PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
         PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
@@ -1178,7 +1188,9 @@ class LevelOne(Level):
     subtext = "idk lol"
     start_pos = Point(100 + offset, 50)
     items = [
-        PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30),
+        PackageInfo(
+            contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30, fragility=4.0
+        ),
         PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
         PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
         # PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
@@ -1290,6 +1302,10 @@ class GameView(ui.RootElement):
         self.timeofday = TimeOfDay(0.5)
         self.viewpos = ViewPos(Tutorial.start_pos)
         self.mouse_pos = Point(0, 0)
+
+        self.pause_offset = 0
+        self.pause_start = None
+        self.game_time_diff = 0
 
         # For the ambient light
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
@@ -1537,7 +1553,7 @@ class GameView(ui.RootElement):
 
         self.main_menu = MainMenu(self, Point(0.2, 0.3), Point(0.8, 0.7))
 
-        self.paused = True
+        self.start_pause()
         self.current_level = 0
         self.top_bar.disable()
         self.bottom_bar.disable()
@@ -1569,7 +1585,7 @@ class GameView(ui.RootElement):
         # If two vertices are *very* close to the floor, we can turn off the engine
         # print(f"{self.drone.landed()}")
         if self.drone.landed():
-            self.drone.on_ground = globals.time
+            self.drone.on_ground = globals.game_time
         # if self.drone.landed() and not self.drone.flying():
         #    self.drone.engine = False
 
@@ -1714,7 +1730,8 @@ class GameView(ui.RootElement):
         # self.old_line.disable()
 
         # globals.cursor.disable()
-        self.paused = False
+        self.unpause()
+
         # self.last_throw = None
         # if self.restricted_box:
         #    self.restricted_box.delete()
@@ -1727,7 +1744,7 @@ class GameView(ui.RootElement):
 
     def create_package(self, info):
         print("PACKAGE with target", info.target)
-        self.package_start = globals.time + (info.time * 1000)
+        self.package_start = globals.game_time + (info.time * 1000)
         bl = Point(70 + offset + random.randint(-20, 20), 0)
 
         package = Package(self, bl, bl + info.size, info)
@@ -1778,7 +1795,7 @@ class GameView(ui.RootElement):
 
     def end_game(self):
         self.game_over = GameOver(self, Point(0.2, 0.2), Point(0.8, 0.8))
-        self.paused = True
+        self.start_pause()
 
     def box_hit(self, arbiter, space, data):
         if not self.thrown:
@@ -1792,7 +1809,7 @@ class GameView(ui.RootElement):
         return True
 
     def keep_flying(self):
-        self.paused = False
+        self.unpause()
         # We'll add a bunch of boxes to the level
         level = self.levels[self.current_level]
 
@@ -1810,7 +1827,7 @@ class GameView(ui.RootElement):
     def next_level(self):
         self.current_level += 1
         self.init_level()
-        self.paused = False
+        self.unpause()
 
     def bottom_hit(self, arbiter, space, data):
         if not self.thrown or self.ball.body.velocity[1] > 0:
@@ -1828,7 +1845,8 @@ class GameView(ui.RootElement):
             if self.main_menu.enabled:
                 return self.quit(0)
             self.main_menu.enable()
-            self.paused = True
+            self.start_pause()
+
             globals.cursor.enable()
             self.level_text.disable()
             if self.sub_text:
@@ -1870,10 +1888,21 @@ class GameView(ui.RootElement):
         extra = 0
         for package in self.packages:
             if package.on_receiver is not None:
-                extra += globals.time - package.on_receiver
+                extra += globals.game_time - package.on_receiver
                 break
 
-        return self.package_start + extra - globals.time
+        return self.package_start + extra - globals.game_time
+
+    def start_pause(self):
+        self.paused = True
+        self.pause_start = globals.time
+        globals.game_time = globals.time - self.game_time_diff
+
+    def unpause(self):
+        self.paused = False
+        self.game_time_diff += self.pause_offset
+        self.pause_offset = 0
+        self.pause_start = None
 
     def update(self, t):
         # for box in self.boxes:
@@ -1882,7 +1911,14 @@ class GameView(ui.RootElement):
             # Hack, skip the main menu
             # self.main_menu.disable()
             # self.main_menu.start_level(0, 0)
+            self.pause_offset = globals.time - self.pause_start
             return
+
+        globals.game_time = globals.time - self.game_time_diff
+
+        for x in range(25):  # 10 iterations to get a more stable simulation
+            globals.current_view.apply_forces()
+            globals.space.step(globals.dt)
 
         if self.package_start is not None:
             text, colour = format_time(self.get_package_time())
