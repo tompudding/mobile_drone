@@ -450,25 +450,25 @@ def end_frame_game_mode():
     # This is the ambient light box around the whole screen for sunlight
     glDrawElements(GL_QUADS, quad_buffer.current_size, GL_UNSIGNED_INT, quad_buffer.indices)
 
-    # quad_buffer = globals.temp_mouse_light
+    quad_buffer = globals.temp_mouse_light
 
-    # # Hack, do the mouse light separate for now so we can set it's position. Should be done elsewhere really and be in
-    # # the lights list
+    # Hack, do the mouse light separate for now so we can set it's position. Should be done elsewhere really and be in
+    # the lights list
 
-    # # translate(-globals.game_view.viewpos.pos.x, -globals.game_view.viewpos.pos.y, 0)
-    # glUniform1i(light_shader.locations.light_type, 2)
-    # glUniform1i(light_shader.locations.shadow_index, 0)
-    # glUniform3f(light_shader.locations.light_pos, globals.mouse_screen.x, globals.mouse_screen.y, 120)
-    # glUniform3f(light_shader.locations.light_colour, 1, 1, 1)
-    # glUniform1f(light_shader.locations.cone_dir, 0)
-    # glUniform1f(light_shader.locations.cone_width, 4)
-    # glUniform1f(light_shader.locations.ambient_attenuation, 0)
-    # glVertexAttribPointer(
-    #     light_shader.locations.vertex_data, 3, GL_FLOAT, GL_FALSE, 0, quad_buffer.vertex_data
-    # )
-    # globals.mouse_light_quad.set_vertices(
-    #     globals.mouse_world - Point(400, 400), globals.mouse_world + Point(400, 400), 0.1
-    # )
+    # translate(-globals.game_view.viewpos.pos.x, -globals.game_view.viewpos.pos.y, 0)
+    glUniform1i(light_shader.locations.light_type, 2)
+    glUniform1i(light_shader.locations.shadow_index, 0)
+    glUniform3f(light_shader.locations.light_pos, globals.mouse_screen.x, globals.mouse_screen.y, 120)
+    glUniform3f(light_shader.locations.light_colour, 1, 1, 1)
+    glUniform1f(light_shader.locations.cone_dir, 0)
+    glUniform1f(light_shader.locations.cone_width, 4)
+    glUniform1f(light_shader.locations.ambient_attenuation, 0)
+    glVertexAttribPointer(
+        light_shader.locations.vertex_data, 3, GL_FLOAT, GL_FALSE, 0, quad_buffer.vertex_data
+    )
+    globals.mouse_light_quad.set_vertices(
+        globals.mouse_world - Point(400, 400), globals.mouse_world + Point(400, 400), 0.1
+    )
 
     # glDrawElements(GL_QUADS, quad_buffer.current_size, GL_UNSIGNED_INT, quad_buffer.indices)
 
@@ -488,10 +488,12 @@ def end_frame_game_mode():
 
     glUniform1i(light_shader.locations.light_type, 2)
     for light in globals.lights:
+
         if not light.on:
             continue
 
         glUniform1i(light_shader.locations.shadow_index, light.shadow_index)
+        glUniform1i(light_shader.locations.light_type, 2)
         glUniform3f(light_shader.locations.light_pos, *light.screen_pos)
         glUniform3f(light_shader.locations.light_colour, *light.colour)
         glUniform1f(light_shader.locations.light_radius, light.radius)
@@ -509,6 +511,8 @@ def end_frame_game_mode():
     for light in globals.cone_lights:
         if not light.on:
             continue
+
+        glUniform1i(light_shader.locations.light_type, 2)
         glUniform1i(light_shader.locations.shadow_index, light.shadow_index)
         glUniform3f(light_shader.locations.light_pos, *light.screen_pos)
         glUniform3f(light_shader.locations.light_colour, *light.colour)
