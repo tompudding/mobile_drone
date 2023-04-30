@@ -545,6 +545,7 @@ class Drone(object):
         self.anchors = []
         self.grabbed = None
         self.joints = []
+        self.parent.next_package_text.set_text(" ")
 
     def enable_turning(self):
         self.turning_enabled = True
@@ -1215,9 +1216,9 @@ class GameView(ui.RootElement):
             self.top_bar,
             Point(0.7, 0),
             Point(1, 1),
-            self.next_package_format.format(number=1),
+            "Grab a package to start",
             2,
-            colour=drawing.constants.colours.green,
+            colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.LEFT,
         )
         self.top_bar.power_bar = ui.PowerBar(
@@ -1241,7 +1242,6 @@ class GameView(ui.RootElement):
             colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.CENTRE,
         )
-        self.next_package_text
 
         # self.ground = None
         self.drone = None
@@ -1452,14 +1452,14 @@ class GameView(ui.RootElement):
         package.update()
         # jim += 1
         self.packages.append(package)
-
-        self.next_package_text.set_text(self.next_package_format.format(number=target + 1))
+        self.next_package_text.set_text("Grab the next package")
 
     def package_delivered(self, delivered_package):
         print("Package delivered!")
         self.packages = [package for package in self.packages if package is not delivered_package]
         if self.drone and self.drone.grabbed is delivered_package:
             self.drone.release()
+
         delivered_package.delete()
 
         level = self.levels[self.current_level]
@@ -1740,6 +1740,9 @@ class GameView(ui.RootElement):
                             continue
 
                         self.drone.grab(package)
+                        self.next_package_text.set_text(
+                            self.next_package_format.format(number=package.id + 1)
+                        )
                         break
 
         # if button == 1 and self.dragging:
