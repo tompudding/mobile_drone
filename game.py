@@ -13,7 +13,7 @@ import itertools
 from dataclasses import dataclass
 
 box_level = 7
-ground_level = 6
+ground_level = 4
 drone_level = 8
 sf = 1
 debug_sprite_name = "resource/sprites/box.png"
@@ -384,8 +384,8 @@ class StaticBox(Box):
     body_type = pymunk.Body.STATIC
     size = None
 
-    def __init__(self, parent, pos):
-        bl = Point(pos, 0)
+    def __init__(self, parent, pos, y=0):
+        bl = Point(pos, y)
         tr = bl + self.size
         super().__init__(parent, bl, tr)
 
@@ -402,7 +402,6 @@ class Ground(object):
         self.parent = parent
         self.height = height
 
-        # TODO: Put proper lower bounds on so we don't fall off. Also make this a ui object so we can use its absolute bounds easier?
         self.bottom_left = Point(-300, -self.height)
         self.top_right = Point(128 * 100, 0)
         self.top_left = Point(self.bottom_left.x, 0)
@@ -690,12 +689,12 @@ class Squirt(object):
             bl.y = 0
 
         tr = bl + size
-        self.quad.set_vertices(bl, tr, 20)
+        self.quad.set_vertices(bl, tr, 6)
         self.quad.set_colour((1, 1, 1, 1 - partial ** 2))
         return True
 
     def delete(self):
-        self.quad.Delete()
+        self.quad.delete()
 
 
 class Drone(object):
@@ -913,8 +912,13 @@ class Drone(object):
             # Instead of debug lines we'll set the rate of squirts
             for i, force in enumerate(self.forces):
                 length = pymunk.Vec2d(*force).length
+                # Also factor in the thrust
+                thrust_ratio = 0.1 + (self.thrust / 20) * 0.9
+                length *= thrust_ratio
+                if length == 0:
+                    length = 1
                 try:
-                    self.squirt_delay[i] = 200 / pymunk.Vec2d(*force).length
+                    self.squirt_delay[i] = 200 / length
                 except ZeroDivisionError:
                     self.squirt_delay[i] = 200
 
@@ -1141,6 +1145,8 @@ class Drone(object):
         for line in itertools.chain(self.jet_lines, self.anchors):
             line.delete()
         self.quad.delete()
+        for squirt in itertools.chain(self.left_squirters, self.right_squirters):
+            squirt.delete()
         globals.space.remove(self.body, self.shape)
 
 
@@ -2112,6 +2118,10 @@ class GameView(ui.RootElement):
 
         for i, pos in enumerate(level.receivers):
             self.receivers.append(Receiver(self, pos, id=i))
+
+        # Hack, put some fences up the left side
+        for y in range(0, 1000, Fence.size.y):
+            self.fences.append(Fence(self, -80, y))
 
         for pos in level.fences:
             self.fences.append(Fence(self, pos))
