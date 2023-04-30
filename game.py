@@ -1086,7 +1086,7 @@ class LevelZero(Level):
     subtext = "idk lol"
     start_pos = Point(100 + offset, 50)
     items = [
-        PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=3),
+        PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30),
         PackageInfo(contents="things", size=Point(40, 40), target=1, max_speed=100, time=20),
         PackageInfo(contents="wood", size=Point(50, 10), target=2, max_speed=50, density=2, time=20),
         PackageInfo(contents="feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
@@ -1504,7 +1504,6 @@ class GameView(ui.RootElement):
         if not self.drone:
             return
         self.drone.thrust = self.thrust_points[index][0]
-        print(f"{self.drone.thrust=}")
 
     def bottom_collision_start(self, arbiter, space, data):
         # If two vertices are *very* close to the floor, we can turn off the engine
@@ -1933,6 +1932,12 @@ class GameView(ui.RootElement):
             # self.dragging_line.end = pos
             # self.dragging_line.update()
             # self.dragging_line.enable()
+            pass
+        elif button == 4:
+            self.thrust_slider.scroll(1)
+        elif button == 5:
+            self.thrust_slider.scroll(-1)
+        elif button == 3:
             pass
 
         # elif button == 3 and not self.thrown and not self.dragging:
