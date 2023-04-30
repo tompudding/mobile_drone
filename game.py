@@ -435,6 +435,7 @@ class Drone(object):
     min_desired = 3
     grab_range = 20
     power_consumption = 0.01
+    charge_rate = 0.01
     power_max = 100
 
     def __init__(self, parent, pos):
@@ -448,8 +449,10 @@ class Drone(object):
         self.top_right = pos + self.size
         self.turning_enabled = True
         self.grabbed = None
-        self.power = 100
+        self.power = 20
         self.on_ground = None
+        self.on_charger = None
+        self.start_power = 0
 
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
@@ -573,6 +576,13 @@ class Drone(object):
         elapsed = (globals.time - self.last_update) * globals.time_step
         self.last_update = globals.time
 
+        if self.on_charger is not None:
+            charge_time = globals.time - self.on_charger - 1000
+            if charge_time > 0:
+                charge_amount = charge_time * self.charge_rate
+                new_power = self.start_power + charge_amount
+                self.add_power(new_power - self.power)
+
         if self.desired_field == 0:
             # decay the desired pos
             self.desired_vector = Point(0, 0)
@@ -608,6 +618,15 @@ class Drone(object):
                     from_phys_coords(self.body.local_to_world(our_anchor)),
                     from_phys_coords(self.grabbed.body.local_to_world(item_anchor)),
                 )
+
+    def mark_on_charger(self, on_charger):
+        if not on_charger:
+            self.on_charger = None
+            return
+
+        if self.on_charger is None:
+            self.on_charger = globals.time
+            self.start_power = self.power
 
     def add_power(self, amount):
         self.power += amount
@@ -1020,6 +1039,7 @@ class LevelZero(Level):
     start_pos = Point(100 + offset, 50)
     items = [(Point(40, 40), 0), (Point(40, 40), 1), (Point(50, 10), 2), (Point(50, 50), 3)]
     receivers = [600 + i * 500 for i in range(10)]
+    chargers = [20]
     fences = [400]
     min_distance = 200
     min_force = 50
@@ -1203,7 +1223,7 @@ class GameView(ui.RootElement):
         self.top_bar.power_bar = ui.PowerBar(
             self.top_bar,
             pos=Point(0.01, 0.4),
-            tr=Point(0.12, 1),
+            tr=Point(0.12, 0.9),
             level=1,
             bar_colours=(
                 drawing.constants.colours.red,
@@ -1228,11 +1248,15 @@ class GameView(ui.RootElement):
         self.packages = []
         self.receivers = []
         self.fences = []
+        self.chargers = []
 
         self.level_text = None
 
         self.bottom_handler = globals.space.add_collision_handler(CollisionTypes.DRONE, CollisionTypes.BOTTOM)
         self.box_handler = globals.space.add_collision_handler(CollisionTypes.BOX, CollisionTypes.BOTTOM)
+        self.charger_handler = globals.space.add_collision_handler(
+            CollisionTypes.DRONE, CollisionTypes.CHARGER
+        )
 
         self.receiver_handler = globals.space.add_collision_handler(
             CollisionTypes.BOX, CollisionTypes.RECEIVER
@@ -1245,6 +1269,8 @@ class GameView(ui.RootElement):
         self.box_handler.post_solve = self.receiver_handler.post_solve = self.box_post_solve
         self.receiver_handler.begin = self.receiver_start
         self.receiver_handler.separate = self.receiver_end
+        self.charger_handler.begin = self.charger_start
+        self.charger_handler.separate = self.charger_end
 
         self.levels = [
             LevelZero(),
@@ -1280,6 +1306,13 @@ class GameView(ui.RootElement):
     def bottom_collision_end(self, arbiter, space, data):
         self.drone.on_ground = None
         return True
+
+    def charger_start(self, arbiter, space, data):
+        self.drone.mark_on_charger(True)
+        return True
+
+    def charger_end(self, arbiter, space, data):
+        self.drone.mark_on_charger(False)
 
     def receiver_start(self, arbiter, space, data):
         ids = [shape.parent for shape in arbiter.shapes]
@@ -1365,6 +1398,9 @@ class GameView(ui.RootElement):
         for fence in self.fences:
             fence.delete()
 
+        for charger in self.chargers:
+            charger.delete()
+
         self.fences = []
 
         # We're going to generate a random package for delivery
@@ -1374,6 +1410,9 @@ class GameView(ui.RootElement):
 
         for pos in level.fences:
             self.fences.append(Fence(self, pos))
+
+        for pos in level.chargers:
+            self.chargers.append(Charger(self, pos, id=0))
 
         size, target = level.items.pop(0)
         print("PACKAGE with target", target)
@@ -1406,7 +1445,7 @@ class GameView(ui.RootElement):
     def create_package(self, size, target):
         print("PACKAGE with target", target)
 
-        bl = Point(50 + offset + random.randint(-20, 20), 0)
+        bl = Point(70 + offset + random.randint(-20, 20), 0)
 
         package = Package(self, bl, bl + size, target=target)
         # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
