@@ -190,7 +190,7 @@ class Box(object):
     collision_type = CollisionTypes.BOX
     body_type = None
 
-    def __init__(self, parent, bl, tr):
+    def __init__(self, parent, bl, tr, density_factor=1):
         self.parent = parent
         # bl, tr = (to_world_coords(x) for x in (bl, tr))
         self.quad = drawing.Quad(globals.quad_buffer)
@@ -214,7 +214,7 @@ class Box(object):
         # print(self.body.position,self.body.velocity)
         # print(vertices)
         self.shape = pymunk.Poly(self.body, vertices)
-        self.shape.density = self.density
+        self.shape.density = self.density * density_factor
         self.shape.friction = 0.2
         self.shape.elasticity = 0.5
         self.shape.collision_type = self.collision_type
@@ -241,10 +241,11 @@ class Package(Box):
     max_damage = 100
     explosive = False
 
-    def __init__(self, parent, bl, tr, target, max_speed):
-        super().__init__(parent, bl, tr)
-        self.id = target
-        self.max_speed = max_speed
+    def __init__(self, parent, bl, tr, info):
+        super().__init__(parent, bl, tr, density_factor=info.density)
+        self.id = info.target
+        self.max_speed = info.max_speed
+        self.contents = info.contents
         self.collision_impulse = Point(0, 0)
         self.on_receiver = None
         self.last_update = None
@@ -1095,7 +1096,7 @@ class PackageInfo:
     target: int
     max_speed: int
     time: float
-    density: float = 0.0
+    density: float = 1.0
 
 
 class LevelZero(Level):
@@ -1105,9 +1106,10 @@ class LevelZero(Level):
     start_pos = Point(100 + offset, 50)
     items = [
         PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30),
-        PackageInfo(contents="things", size=Point(40, 40), target=1, max_speed=100, time=20),
-        PackageInfo(contents="wood", size=Point(50, 10), target=2, max_speed=50, density=2, time=20),
-        PackageInfo(contents="feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+        PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
+        PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
+        # PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
+        PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
     ]
     receivers = [600 + i * 500 for i in range(10)]
     chargers = [20]
@@ -1384,6 +1386,16 @@ class GameView(ui.RootElement):
             alignment=drawing.texture.TextAlignments.CENTRE,
         )
 
+        self.top_bar.contents_value = ui.TextBox(
+            self.top_bar,
+            Point(0.13, 0.4),
+            Point(0.13 + 0.2, 0.8),
+            " ",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
         self.top_bar.contents = ui.TextBox(
             self.top_bar,
             Point(0.13, 0),
@@ -1529,7 +1541,7 @@ class GameView(ui.RootElement):
         # self.ball.disable()
 
     def release(self, package):
-        self.next_package_text.set_text(" ")
+        # self.next_package_text.set_text(" ")
         self.help_text.set_text(" ")
         # self.update_jostle(None)
         # self.bottom_bar.timer.set_text(" ")
@@ -1696,7 +1708,7 @@ class GameView(ui.RootElement):
         self.package_start = globals.time + (info.time * 1000)
         bl = Point(70 + offset + random.randint(-20, 20), 0)
 
-        package = Package(self, bl, bl + info.size, target=info.target, max_speed=info.max_speed)
+        package = Package(self, bl, bl + info.size, info)
         # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
         package.update()
         # jim += 1
@@ -1704,6 +1716,7 @@ class GameView(ui.RootElement):
         self.help_text.set_text("Grab the next package")
         self.next_package_text.set_text(self.next_package_format.format(number=package.id + 1))
         self.update_jostle(package)
+        self.top_bar.contents_value.set_text(package.contents)
 
     def score_for_package(self, package, time):
         score = max(package.max_damage - package.damage, 0)
@@ -1723,6 +1736,8 @@ class GameView(ui.RootElement):
         if self.drone and self.drone.grabbed is delivered_package:
             self.drone.release()
         self.package_start = None
+        self.top_bar.contents_value.set_text(" ")
+        self.update_jostle(None)
 
         delivered_package.delete()
 
