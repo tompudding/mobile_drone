@@ -1386,6 +1386,8 @@ class GameView(ui.RootElement):
 
         self.paused = True
         self.current_level = 0
+        self.top_bar.disable()
+        self.bottom_bar.disable()
 
         # Skip the main menu for now
         # self.main_menu.disable()
@@ -1471,6 +1473,9 @@ class GameView(ui.RootElement):
     def init_level(self):
         if self.level_text:
             self.level_text.delete()
+
+        self.top_bar.enable()
+        self.bottom_bar.enable()
 
         self.start_level = globals.t
         level = self.levels[self.current_level]

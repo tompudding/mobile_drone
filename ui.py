@@ -1090,6 +1090,15 @@ class Slider(UIElement):
         # else:
         #    return None
 
+    def scroll(self, amount):
+        self.index += amount
+        if self.index < 0:
+            self.index = 0
+        if self.index >= len(self.offsets):
+            self.index = len(self.offsets) - 1
+        self.set_pointer()
+        self.callback(self.index)
+
     def mouse_motion(self, pos, rel, handled):
         if not self.dragging:
             return  # we don't care

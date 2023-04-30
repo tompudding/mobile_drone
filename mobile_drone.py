@@ -28,7 +28,7 @@ def init():
     except KeyError:
         pass
 
-    w, h = (1280, 1024)
+    w, h = (1280, 960)
 
     globals.dirs = globals.types.Directories("resource")
 
