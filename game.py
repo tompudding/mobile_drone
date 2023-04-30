@@ -896,12 +896,20 @@ class Drone(object):
     down_keys = {pygame.locals.K_s, pygame.locals.K_DOWN}
     left_keys = {pygame.locals.K_a, pygame.locals.K_LEFT}
     right_keys = {pygame.locals.K_d, pygame.locals.K_RIGHT}
-    key_map = (
-        {key: Directions.UP for key in up_keys}
-        | {key: Directions.DOWN for key in down_keys}
-        | {key: Directions.LEFT for key in left_keys}
-        | {key: Directions.RIGHT for key in right_keys}
-    )
+    key_map = {}
+
+    for key in up_keys:
+        key_map[key] = Directions.UP
+
+    for key in down_keys:
+        key_map[key] = Directions.DOWN
+
+    for key in left_keys:
+        key_map[key] = Directions.LEFT
+
+    for key in right_keys:
+        key_map[key] = Directions.RIGHT
+
     vectors = {
         Directions.UP: Point(0, 1),
         Directions.DOWN: Point(0, -1),
@@ -1759,7 +1767,7 @@ class Tutorial:
         "Use WASD or the Arrow Keys to fly around",
         "Press space to turn your engines off and on again",
         "Fly onto the charging platform and turn off your engines to regain power",
-        "Pick up a package by flying over it and clicking with the left mouse",
+        "Pick up a package by flying close over it and clicking on the top of it with the left mouse",
         "Release it by clicking anywhere with the left mouse",
         "Adjust your thrust with the scroll wheel or the slider",
         "Deliver it to the target platform. Going too fast or collisions will damage it and reduce your score, as will being late",
@@ -2713,7 +2721,7 @@ class GameView(ui.RootElement):
                 if (
                     abs(diff.x) < self.drone.size.x * 0.5
                     and diff.y < 0
-                    # and self.drone.in_grab_range(info.distance * phys_scale)
+                    and self.drone.in_grab_range(info.distance * phys_scale)
                 ):
                     for package in self.packages:
                         info = package.shape.point_query(tuple(to_phys_coords(globals.mouse_world)))
