@@ -146,10 +146,9 @@ def main_run():
             elif event.type == pygame.KEYUP:
                 try:
                     key = ord(event.unicode)
-                except AttributeError:
+                except (AttributeError, TypeError):
                     key = event.key
-                except TypeError:
-                    continue
+
                 globals.current_view.key_up(key)
             else:
                 try:

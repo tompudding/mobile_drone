@@ -427,7 +427,6 @@ class House(Box):
 
         centre = self.quad.get_centre()
         vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
-        print(vertices)
 
         self.bodies = []
         self.moments = []
@@ -1842,6 +1841,7 @@ class Tutorial:
                 return self.next_stage()
         if self.stage == 4:
             if not self.parent.drone.grabbed:
+                self.parent.enable_controls()
                 return self.next_stage()
         if self.stage == 5:
             if self.thrust_field == 3:
@@ -1855,6 +1855,9 @@ class Tutorial:
             self.parent.drone.power = 80
         if self.stage == 3:
             self.anchor_disabled = False
+        if self.stage == 4:
+            # disable the controls in case the user tries to take the package
+            self.parent.disable_controls()
         if self.stage == 5:
             self.parent.package_start = globals.game_time + (self.parent.current_info.time * 1000)
         if self.stage >= len(self.stages):
@@ -1925,6 +1928,7 @@ class GameView(ui.RootElement):
         self.thrust_slider.enable()
         self.next_level_menu = None
         self.game_over = None
+        self.controls = True
 
         self.bottom_bar.time_text = ui.TextBox(
             self.bottom_bar,
@@ -2158,6 +2162,12 @@ class GameView(ui.RootElement):
         # self.cup.disable()
         # self.ball.disable()
 
+    def enable_controls(self):
+        self.controls = True
+
+    def disable_controls(self):
+        self.controls = False
+
     def release(self, package):
         # self.next_package_text.set_text(" ")
         self.help_text.set_text(" ")
@@ -2171,7 +2181,6 @@ class GameView(ui.RootElement):
         self.drone.thrust = self.thrust_points[index][0]
         diff = self.drone.thrust - old_thrust
         if self.tutorial:
-            print(f"{old_thrust=} {self.drone.thrust=}")
             self.tutorial.thrust_adjust(diff)
 
     def bottom_collision_start(self, arbiter, space, data):
@@ -2240,6 +2249,7 @@ class GameView(ui.RootElement):
 
     def init_level(self):
         self.score = 0
+        self.controls = True
         self.bottom_bar.score_num_text.set_text(f"{self.score}", colour=drawing.constants.colours.yellow)
         if self.level_text:
             self.level_text.delete()
@@ -2352,7 +2362,7 @@ class GameView(ui.RootElement):
 
     def create_package(self, info):
         self.current_info = info
-        print("PACKAGE with target", info.target)
+        # print("PACKAGE with target", info.target)
         self.package_start = globals.game_time + (info.time * 1000)
         bl = Point(70 + offset + random.randint(-20, 20), 0)
 
@@ -2495,7 +2505,7 @@ class GameView(ui.RootElement):
             # shifts count as the right button
             self.mouse_button_down(globals.mouse_screen, 3)
 
-        if self.drone:
+        if self.controls and self.drone:
             self.drone.key_down(key)
         # This makes it super easy
         # elif key == pygame.locals.K_r and self.last_throw:
@@ -2510,7 +2520,7 @@ class GameView(ui.RootElement):
             # shifts count as the right button
             self.mouse_button_up(globals.mouse_screen, 3)
 
-        if self.drone:
+        if self.controls and self.drone:
             self.drone.key_up(key)
 
     def get_package_time(self):
@@ -2712,7 +2722,7 @@ class GameView(ui.RootElement):
                 if (
                     abs(diff.x) < self.drone.size.x * 0.5
                     and diff.y < 0
-                    and self.drone.in_grab_range(info.distance * phys_scale)
+                    # and self.drone.in_grab_range(info.distance * phys_scale)
                 ):
                     for package in self.packages:
                         info = package.shape.point_query(tuple(to_phys_coords(globals.mouse_world)))
