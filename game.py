@@ -249,6 +249,7 @@ class Package(Box):
         self.on_receiver = None
         self.last_update = None
         self.damage = 0
+        # self.last_package_start = 0
 
     def jostle(self, amount):
         self.damage += amount
@@ -279,7 +280,13 @@ class Package(Box):
 
     def mark_on_receiver(self, on_receiver):
         if not on_receiver:
+            if self.on_receiver is not None:
+                # We should credit the player with any time it's spent on this receiver
+                receive_time = globals.time - self.on_receiver
+                self.parent.package_start += receive_time
+
             self.on_receiver = None
+
             return
 
         if self.on_receiver is None:
@@ -297,9 +304,17 @@ class Package(Box):
 
         super().update()
 
-        if self.on_receiver is not None and globals.time - self.on_receiver > self.receive_time:
-            self.on_receiver = None
-            self.parent.package_delivered(self)
+        if self.on_receiver is not None:
+            receive_time = globals.time - self.on_receiver
+            if receive_time > self.receive_time:
+                self.on_receiver = None
+                self.parent.package_delivered(self)
+            # else:
+            # We don't count the time that the package is on the right receiver toward the delivery time
+            # if self.parent.package_start is not None:
+            #    extra = receive_time - self.last_package_start
+            #    self.last_package_start = receive_time
+            #    self.parent.package_start += extra
 
 
 class Receiver(Box):
@@ -1682,7 +1697,7 @@ class GameView(ui.RootElement):
 
     def package_delivered(self, delivered_package):
         print("Package delivered!")
-        self.score += self.score_for_package(delivered_package, self.package_start - globals.time)
+        self.score += self.score_for_package(delivered_package, self.get_package_time())
         self.bottom_bar.score_num_text.set_text(f"{self.score}", colour=drawing.constants.colours.yellow)
         self.packages = [package for package in self.packages if package is not delivered_package]
         if self.drone and self.drone.grabbed is delivered_package:
@@ -1813,6 +1828,18 @@ class GameView(ui.RootElement):
         if self.drone:
             self.drone.key_up(key)
 
+    def get_package_time(self):
+        if self.package_start is None:
+            return None
+
+        extra = 0
+        for package in self.packages:
+            if package.on_receiver is not None:
+                extra += globals.time - package.on_receiver
+                break
+
+        return self.package_start + extra - globals.time
+
     def update(self, t):
         # for box in self.boxes:
         #    box.update()
@@ -1823,7 +1850,7 @@ class GameView(ui.RootElement):
             return
 
         if self.package_start is not None:
-            text, colour = format_time(self.package_start - globals.time)
+            text, colour = format_time(self.get_package_time())
             self.bottom_bar.timer.set_text(text, colour=colour)
 
         if self.text_fade == False and self.start_level and globals.t - self.start_level > 5000:
