@@ -423,6 +423,7 @@ class Ground(object):
         # bottom.sensor = True
         self.segment.collision_type = CollisionTypes.BOTTOM
         self.segment.friction = 1
+        self.segment.parent = self
         self.elasticity = 0.3
 
         globals.space.add(self.segment)
@@ -444,6 +445,7 @@ class Ground(object):
             segment.collision_type = CollisionTypes.WALL
             segment.friction = 1
             segment.elasticity = 0.5
+            segment.parent = self
             globals.space.add(segment)
             self.segments.append(segment)
 
@@ -513,6 +515,7 @@ class Drone(object):
         self.shape.friction = 0.5
         self.shape.elasticity = 0.3
         self.shape.collision_type = CollisionTypes.DRONE
+        self.shape.parent = self
         globals.space.add(self.body, self.shape)
 
         # self.polar_vertices = [cmath.polar(v[0] + v[1] * 1j) for v in self.vertices]
@@ -1467,7 +1470,23 @@ class GameView(ui.RootElement):
         self.score = 0
 
         self.bottom_handler = globals.space.add_collision_handler(CollisionTypes.DRONE, CollisionTypes.BOTTOM)
-        self.box_handler = globals.space.add_collision_handler(CollisionTypes.BOX, CollisionTypes.BOTTOM)
+        self.box_handlers = [
+            globals.space.add_collision_handler(CollisionTypes.BOX, item_type)
+            for item_type in (
+                CollisionTypes.BOTTOM,
+                CollisionTypes.DRONE,
+                CollisionTypes.BOX,
+                CollisionTypes.WALL,
+                CollisionTypes.RECEIVER,
+                CollisionTypes.CHARGER,
+            )
+        ]
+
+        for handler in self.box_handlers:
+            handler.post_solve = self.box_post_solve
+        self.box_ground_handler = globals.space.add_collision_handler(
+            CollisionTypes.BOX, CollisionTypes.BOTTOM
+        )
         self.charger_handler = globals.space.add_collision_handler(
             CollisionTypes.DRONE, CollisionTypes.CHARGER
         )
@@ -1480,7 +1499,7 @@ class GameView(ui.RootElement):
 
         self.bottom_handler.begin = self.bottom_collision_start
         self.bottom_handler.separate = self.bottom_collision_end
-        self.box_handler.post_solve = self.receiver_handler.post_solve = self.box_post_solve
+        # self.box_handler.post_solve = self.receiver_handler.post_solve = self.box_post_solve
         self.receiver_handler.begin = self.receiver_start
         self.receiver_handler.separate = self.receiver_end
         self.charger_handler.begin = self.charger_start
@@ -1512,7 +1531,7 @@ class GameView(ui.RootElement):
     def release(self, package):
         self.next_package_text.set_text(" ")
         self.help_text.set_text(" ")
-        self.update_jostle(None)
+        # self.update_jostle(None)
         # self.bottom_bar.timer.set_text(" ")
 
     def thrust_callback(self, index):
@@ -1568,16 +1587,15 @@ class GameView(ui.RootElement):
         return True
 
     def box_post_solve(self, arbiter, space, data):
+        if not arbiter.is_first_contact or arbiter.total_ke < 150:
+            return
+
         for shape in arbiter.shapes:
-            if shape is self.ground.segment:
+            if not isinstance(shape.parent, Package):
                 continue
+            package = shape.parent
+            package.jostle(arbiter.total_ke / 300)
 
-            for package in self.packages:
-                if shape is not package.shape:
-                    continue
-
-                package.collision_impulse = arbiter.total_impulse
-                # print("BCS", shape, arbiter.total_impulse)
         return True
 
     def quit(self, pos):
@@ -1684,6 +1702,8 @@ class GameView(ui.RootElement):
         # jim += 1
         self.packages.append(package)
         self.help_text.set_text("Grab the next package")
+        self.next_package_text.set_text(self.next_package_format.format(number=package.id + 1))
+        self.update_jostle(package)
 
     def score_for_package(self, package, time):
         score = max(package.max_damage - package.damage, 0)
@@ -2007,10 +2027,10 @@ class GameView(ui.RootElement):
 
                         self.drone.grab(package)
 
-                        self.next_package_text.set_text(
-                            self.next_package_format.format(number=package.id + 1)
-                        )
-                        self.update_jostle(package)
+                        # self.next_package_text.set_text(
+                        #    self.next_package_format.format(number=package.id + 1)
+                        # )
+                        # self.update_jostle(package)
 
                         self.help_text.set_text("Deliver the package")
                         break
