@@ -546,6 +546,7 @@ class Drone(object):
         self.grabbed = None
         self.joints = []
         self.parent.next_package_text.set_text(" ")
+        self.parent.help_text.set_text(" ")
 
     def enable_turning(self):
         self.turning_enabled = True
@@ -1192,7 +1193,7 @@ class TimeOfDay(object):
 
 class GameView(ui.RootElement):
     text_fade_duration = 1000
-    next_package_format = "The package is going to number {number}"
+    next_package_format = "Number {number}"
 
     def __init__(self):
         # self.atlas = globals.atlas = drawing.texture.TextureAtlas('tiles_atlas_0.png','tiles_atlas.txt')
@@ -1212,15 +1213,16 @@ class GameView(ui.RootElement):
             parent=globals.screen_root, pos=Point(0, 0.9), tr=Point(1, 1), colour=(0.5, 0.5, 0.5, 0.7)
         )
 
-        self.next_package_text = ui.TextBox(
-            self.top_bar,
-            Point(0.7, 0),
-            Point(1, 1),
+        self.help_text = ui.TextBox(
+            self,
+            Point(0, 0),
+            Point(1, 0.1),
             "Grab a package to start",
             2,
             colour=drawing.constants.colours.white,
-            alignment=drawing.texture.TextAlignments.LEFT,
+            alignment=drawing.texture.TextAlignments.CENTRE,
         )
+
         self.top_bar.power_bar = ui.PowerBar(
             self.top_bar,
             pos=Point(0.01, 0.4),
@@ -1229,15 +1231,64 @@ class GameView(ui.RootElement):
             bar_colours=(
                 drawing.constants.colours.red,
                 drawing.constants.colours.yellow,
-                drawing.constants.colours.white,
+                drawing.constants.colours.green,
             ),
             border_colour=drawing.constants.colours.white,
         )
         self.top_bar.power_bar.text = ui.TextBox(
-            self.top_bar.power_bar,
-            Point(0, -0.4),
-            Point(1, 0),
+            self.top_bar,
+            Point(0.01, 0),
+            Point(0.12, 0.36),
             "Power",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
+        self.top_bar.contents = ui.TextBox(
+            self.top_bar,
+            Point(0.13, 0),
+            Point(0.13 + 0.2, 0.36),
+            "Contents",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
+        self.top_bar.max_speed = ui.TextBox(
+            self.top_bar,
+            Point(0.34, 0),
+            Point(0.34 + 0.2, 0.36),
+            "Max Speed",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
+        self.top_bar.jostle_text = ui.TextBox(
+            self.top_bar,
+            Point(0.55, 0),
+            Point(0.55 + 0.2, 0.36),
+            "Jostle Meter",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
+        self.next_package_text = ui.TextBox(
+            self.top_bar,
+            Point(0.76, 0.4),
+            Point(0.76 + 0.2, 0.8),
+            " ",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+        self.top_bar.jostle_text = ui.TextBox(
+            self.top_bar,
+            Point(0.76, 0),
+            Point(0.76 + 0.2, 0.36),
+            "Address",
             2,
             colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.CENTRE,
@@ -1452,7 +1503,7 @@ class GameView(ui.RootElement):
         package.update()
         # jim += 1
         self.packages.append(package)
-        self.next_package_text.set_text("Grab the next package")
+        self.help_text.set_text("Grab the next package")
 
     def package_delivered(self, delivered_package):
         print("Package delivered!")
@@ -1743,6 +1794,7 @@ class GameView(ui.RootElement):
                         self.next_package_text.set_text(
                             self.next_package_format.format(number=package.id + 1)
                         )
+                        self.help_text.set_text("Deliver the package")
                         break
 
         # if button == 1 and self.dragging:
