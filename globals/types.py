@@ -109,7 +109,7 @@ class Point(object):
 class Directories:
     def __init__(self, base):
         self.resource = base
-        for name in "sprites", "foreground", "computer", "cursor":
+        for name in "sprites", "foreground", "computer", "cursor", "music":
             setattr(self, name, os.path.join(base, name))
 
 

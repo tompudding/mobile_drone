@@ -10,6 +10,7 @@ import traceback
 import random
 import enum
 import itertools
+import os
 from dataclasses import dataclass
 
 box_level = 7
@@ -519,16 +520,15 @@ class Mailbox(House):
         self.last_flag = globals.time
 
     def set_flag(self, flag):
-        if globals.game_time - self.last_flag < 500:
-            return
 
         tc = self.flag_tc if flag else self.normal_tc
 
         if tc is not self.current:
-            if flag:
-                globals.sounds.flag.play()
-            else:
-                globals.sounds.flag_down.play()
+            if globals.game_time - self.last_flag >= 500:
+                if flag:
+                    globals.sounds.flag.play()
+                else:
+                    globals.sounds.flag_down.play()
             self.quad.set_texture_coordinates(tc)
             self.current = tc
             self.last_flag = globals.game_time
@@ -1445,7 +1445,7 @@ class MainMenu(ui.HoverableBox):
             self,
             Point(0, 0.0),
             Point(1, 0.05),
-            "Lower your thrust for fragile items. Escape for main menu",
+            "Delete stops the music. Escape for main menu",
             1.5,
             colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.CENTRE,
@@ -1473,7 +1473,7 @@ class MainMenu(ui.HoverableBox):
                 ui.TextBox(
                     self,
                     pos + Point(0.45, 0.00),
-                    tr=pos + Point(0.55, 0.05),
+                    tr=pos + Point(0.65, 0.05),
                     text=" ",
                     scale=2,
                     colour=drawing.constants.colours.white,
@@ -1614,7 +1614,7 @@ class Level(object):
                     "Marmite",
                 ]
             ),
-            size=random.choice(Package.sprite_size_lookup.keys()),
+            size=random.choice(list(Package.sprite_size_lookup.keys())),
             target=0,
             max_speed=random.randint(10, 100),
             time=random.randint(12, 30),
@@ -1857,6 +1857,9 @@ class GameView(ui.RootElement):
         self.timeofday = TimeOfDay(0.5)
         self.viewpos = ViewPos(TutorialLevel.start_pos)
         self.mouse_pos = Point(0, 0)
+        pygame.mixer.music.load(os.path.join(globals.dirs.music, "music.ogg"))
+        pygame.mixer.music.set_volume(0.3)
+        pygame.mixer.music.play(loops=-1)
 
         self.pause_offset = 0
         self.pause_start = None
@@ -2487,6 +2490,11 @@ class GameView(ui.RootElement):
         elif key in (pygame.locals.K_RSHIFT, pygame.locals.K_LSHIFT):
             # shifts count as the right button
             self.mouse_button_down(globals.mouse_screen, 3)
+        elif key == pygame.locals.K_DELETE:
+            if pygame.mixer.music.get_busy():
+                pygame.mixer.music.pause()
+            else:
+                pygame.mixer.music.unpause()
 
         if self.controls and self.drone:
             self.drone.key_down(key)
