@@ -248,7 +248,22 @@ class Package(Box):
     max_damage = 100
     explosive = False
 
+    sprite_size_lookup = {
+        Point(40, 40): "box_40_40.png",
+        Point(50, 10): "box_50_10.png",
+        Point(50, 50): "box_50_50.png",
+        Point(30, 30): "box_30_30.png",
+    }
+
     def __init__(self, parent, bl, tr, info):
+        size = tr - bl
+        try:
+            sprite_name = self.sprite_size_lookup[size]
+        except KeyError:
+            print("No box for size", size)
+            sprite_name = self.sprite_size_lookup[Point(40, 40)]
+
+        self.sprite_name = f"resource/sprites/{sprite_name}"
         super().__init__(parent, bl, tr, density_factor=info.density)
         self.id = info.target
         self.fragility = info.fragility
@@ -365,7 +380,7 @@ class Receiver(Box):
 
 
 class Charger(Box):
-    sprite_name = "resource/sprites/receiver.png"
+    sprite_name = "resource/sprites/charger.png"
     mass = 0.01
     density = 12 / 100000
     is_package = False
@@ -1570,7 +1585,7 @@ class Level(object):
                     "Marmite",
                 ]
             ),
-            size=Point(random.randint(20, 50), random.randint(20, 50)),
+            size=random.choice(Package.sprite_size_lookup.keys()),
             target=0,
             max_speed=random.randint(10, 100),
             time=random.randint(12, 30),
