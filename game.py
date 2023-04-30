@@ -786,7 +786,8 @@ class Drone(object):
         self.desired_quad.disable()
 
         # Also for debugging we'll draw some lines for the jet forces
-        self.jet_lines = [Line(self, Point(0, 0), Point(300, 3000)) for i in (0, 1)]
+        # self.jet_lines = [Line(self, Point(0, 0), Point(300, 3000)) for i in (0, 1)]
+        self.jet_lines = []
 
         self.desired_shift = Point(0, 0)
         self.desired_pos = from_phys_coords(self.body.position)
@@ -863,6 +864,8 @@ class Drone(object):
             return
 
         if self.engine:
+            for light in self.lights:
+                light.on = True
             tc = int((globals.game_time // self.frame_delta) % len(self.tcs))
 
             tc = self.tcs[tc]
@@ -987,6 +990,8 @@ class Drone(object):
         self.power += amount
         if self.power <= 0:
             self.power = 0
+            for light in self.lights:
+                light.on = False
             self.engine = False
         if self.power > self.power_max:
             self.power = self.power_max
