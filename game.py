@@ -347,6 +347,18 @@ class Receiver(Box):
         self.name_tc = parent.atlas.texture_coords(self.name_name % self.id)
         self.name_quad.set_texture_coordinates(self.name_tc)
 
+    def enable(self):
+        super().enable()
+        self.name_quad.enable()
+
+    def disable(self):
+        super().disable()
+        self.name_quad.disable()
+
+    def delete(self):
+        super().delete()
+        self.name_quad.delete()
+
 
 class Charger(Box):
     sprite_name = "resource/sprites/receiver.png"
@@ -1120,6 +1132,7 @@ class Level(object):
     restricted_start = None
     boxes_pos_fixed = False
     infinite = False
+    tutorial = False
 
     prebuilts = [
         PackageInfo(
@@ -1164,21 +1177,16 @@ class Level(object):
         )
 
 
-class Tutorial(Level):
-    text = "Deliver Stuff"
+class TutorialLevel(Level):
+    text = "Tutorial"
     name = "Tutorial"
-    subtext = "idk lol"
+    subtext = " "
+    tutorial = True
     start_pos = Point(100 + offset, 50)
     items = [
-        PackageInfo(
-            contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30, fragility=4.0
-        ),
-        PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
-        PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
-        PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
-        PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+        PackageInfo(contents="Things", size=Point(40, 40), target=0, max_speed=100, time=20),
     ]
-    receivers = [600]
+    receivers = [200]
     chargers = [20]
     fences = []
     min_distance = 200
@@ -1186,18 +1194,26 @@ class Tutorial(Level):
 
 
 class LevelOne(Level):
-    text = "Deliver Stuff"
+    text = "Another Day another Package"
     name = "Deliver Items"
-    subtext = "idk lol"
+    subtext = "Be careful not to break things!"
     start_pos = Point(100 + offset, 50)
     items = [
+        PackageInfo(contents="Plastic Minis", size=Point(40, 40), target=0, max_speed=100, time=20),
         PackageInfo(
-            contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30, fragility=4.0
+            contents="Glass", size=Point(40, 40), target=1, density=0.5, max_speed=10, time=30, fragility=4.0
         ),
-        # PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
-        # PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
-        # PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
-        # PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+        PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=29),
+        PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+        PackageInfo(
+            contents="TTRPG Books",
+            size=Point(30, 30),
+            target=2,
+            max_speed=50,
+            density=5.5,
+            time=50,
+            fragility=2.0,
+        ),
     ]
     receivers = [600 + i * 500 for i in range(5)]
     chargers = [20]
@@ -1207,10 +1223,10 @@ class LevelOne(Level):
 
 
 class LevelTwo(Level):
-    text = "There's always another package"
+    text = "There's Always Another Package"
     name = "Free Flying"
     infinite = True
-    subtext = "idk lol"
+    subtext = "In Delivery, Deliverance"
     start_pos = Point(100 + offset, 50)
     items = []
     receivers = [600 + i * 500 for i in range(5)]
@@ -1294,6 +1310,94 @@ def format_time(t):
     return f"{seconds:4d}.{ms:03d}", colour
 
 
+class Tutorial:
+    stages = [
+        "Use WASD or the Array Keys to fly around",
+        "Press space to turn your engines off and on again",
+        "Fly onto the charging platform and turn off your engines to regain power",
+        "Pick up a package by flying over it and clicking with the left mouse",
+        "Release it by clicking anywhere with the left mouse",
+        "Adjust your thrust with the scroll wheel or the slider",
+        "Deliver it to the target platform. Going to fast or collisions will damage it and reduce your score, as will being late",
+        "Well done",
+    ]
+
+    def __init__(self, parent):
+        self.parent = parent
+        self.stage = 0
+        self.text = ui.TextBox(
+            self.parent,
+            Point(0, 0.4),
+            Point(1, 0.5),
+            self.stages[self.stage],
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+        self.text.enable()
+        self.bitfield = 0
+        self.thrust_field = 0
+        self.engines_toggled = False
+        self.anchor_disabled = True
+
+    def thrust_adjust(self, amount):
+        if self.stage != 5:
+            return
+        if amount > 0:
+            self.thrust_field |= 1
+        if amount < 0:
+            self.thrust_field |= 2
+
+    def update(self):
+        if self.stage == 0:
+            self.bitfield |= self.parent.drone.desired_field
+            if int(self.bitfield) == 0xF:
+                self.bitfield = 0
+                return self.next_stage()
+        if self.stage == 1:
+            if not self.parent.drone.engine and not self.engines_toggled:
+                self.engines_toggled = True
+                return
+            if self.parent.drone.engine and self.engines_toggled:
+                return self.next_stage()
+        if self.stage == 2:
+            if self.parent.drone.power == 100:
+                return self.next_stage()
+        if self.stage == 3:
+            if self.parent.drone.grabbed:
+                return self.next_stage()
+        if self.stage == 4:
+            if not self.parent.drone.grabbed:
+                return self.next_stage()
+        if self.stage == 5:
+            if self.thrust_field == 3:
+                return self.next_stage()
+
+        return False
+
+    def next_stage(self):
+        self.stage += 1
+        if self.stage == 2:
+            self.parent.drone.power = 80
+        if self.stage == 3:
+            self.anchor_disabled = False
+        if self.stage == 5:
+            self.parent.package_start = globals.game_time + (self.parent.current_info.time * 1000)
+        if self.stage >= len(self.stages):
+            return True
+        self.text.set_text(self.stages[self.stage])
+        return False
+
+    def delete(self):
+        self.text.delete()
+
+    def enable(self):
+        self.text.enable()
+
+    def disable(self):
+        self.text.disable()
+
+
 class GameView(ui.RootElement):
     text_fade_duration = 1000
     next_package_format = "Number {number}"
@@ -1303,16 +1407,17 @@ class GameView(ui.RootElement):
         # globals.ui_atlas = drawing.texture.TextureAtlas('ui_atlas_0.png','ui_atlas.txt',extra_names=False)
         super(GameView, self).__init__(Point(0, 0), globals.screen)
         self.timeofday = TimeOfDay(0.5)
-        self.viewpos = ViewPos(Tutorial.start_pos)
+        self.viewpos = ViewPos(TutorialLevel.start_pos)
         self.mouse_pos = Point(0, 0)
 
         self.pause_offset = 0
         self.pause_start = None
         self.game_time_diff = 0
+        self.current_info = None
 
         # For the ambient light
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
-        self.ground = Ground(self, Tutorial.ground_height)
+        self.ground = Ground(self, TutorialLevel.ground_height)
         self.light = drawing.Quad(globals.light_quads)
         self.light.set_vertices(self.ground.bottom_left, self.ground.ceiling_right, 0)
 
@@ -1339,6 +1444,7 @@ class GameView(ui.RootElement):
             colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.CENTRE,
         )
+
         self.thrust_slider.index = int(len(self.thrust_points) // 2)
         self.thrust_slider.set_pointer()
         self.thrust_slider.enable()
@@ -1508,6 +1614,7 @@ class GameView(ui.RootElement):
         self.receivers = []
         self.fences = []
         self.chargers = []
+        self.tutorial = None
 
         self.level_text = None
         self.score = 0
@@ -1549,7 +1656,7 @@ class GameView(ui.RootElement):
         self.charger_handler.separate = self.charger_end
 
         self.levels = [
-            Tutorial(),
+            TutorialLevel(),
             LevelOne(),
             LevelTwo(),
         ]
@@ -1583,7 +1690,12 @@ class GameView(ui.RootElement):
     def thrust_callback(self, index):
         if not self.drone:
             return
+        old_thrust = self.drone.thrust
         self.drone.thrust = self.thrust_points[index][0]
+        diff = self.drone.thrust - old_thrust
+        if self.tutorial:
+            print(f"{old_thrust=} {self.drone.thrust=}")
+            self.tutorial.thrust_adjust(diff)
 
     def bottom_collision_start(self, arbiter, space, data):
         # If two vertices are *very* close to the floor, we can turn off the engine
@@ -1682,6 +1794,7 @@ class GameView(ui.RootElement):
         else:
             self.sub_text = None
         self.text_fade = False
+
         for package in self.packages:
             package.delete()
 
@@ -1700,6 +1813,11 @@ class GameView(ui.RootElement):
 
         self.fences = []
         self.chargers = []
+        if self.tutorial:
+            self.tutorial.delete()
+            self.tutorial = None
+        if level.tutorial:
+            self.tutorial = Tutorial(self)
 
         # We're going to generate a random package for delivery
 
@@ -1729,6 +1847,8 @@ class GameView(ui.RootElement):
             self.drone.delete()
         # self.ground = Ground(self, level.ground_height)
         self.drone = Drone(self, level.start_pos)
+        # This will initialise the thrust
+        self.thrust_slider.scroll(0)
         self.viewpos.set_follow_target(self.drone)
         # self.cup.enable()
         # self.ball.enable()
@@ -1748,6 +1868,7 @@ class GameView(ui.RootElement):
         #    self.cup.reset_line()
 
     def create_package(self, info):
+        self.current_info = info
         print("PACKAGE with target", info.target)
         self.package_start = globals.game_time + (info.time * 1000)
         bl = Point(70 + offset + random.randint(-20, 20), 0)
@@ -1774,6 +1895,9 @@ class GameView(ui.RootElement):
 
     def package_delivered(self, delivered_package):
         print("Package delivered!")
+        if self.tutorial:
+            self.tutorial.delete()
+            self.tutorial = None
         self.score += self.score_for_package(delivered_package, self.get_package_time())
         self.bottom_bar.score_num_text.set_text(f"{self.score}", colour=drawing.constants.colours.yellow)
         self.packages = [package for package in self.packages if package is not delivered_package]
@@ -1922,12 +2046,16 @@ class GameView(ui.RootElement):
         self.paused = True
         self.pause_start = globals.time
         globals.game_time = globals.time - self.game_time_diff
+        if self.tutorial:
+            self.tutorial.disable()
 
     def unpause(self):
         self.paused = False
         self.game_time_diff += self.pause_offset
         self.pause_offset = 0
         self.pause_start = None
+        if self.tutorial:
+            self.tutorial.enable()
 
     def update(self, t):
         # for box in self.boxes:
@@ -1948,6 +2076,9 @@ class GameView(ui.RootElement):
         if self.package_start is not None:
             text, colour = format_time(self.get_package_time())
             self.bottom_bar.timer.set_text(text, colour=colour)
+
+        if self.tutorial:
+            self.tutorial.update()
 
         if self.text_fade == False and self.start_level and globals.t - self.start_level > 5000:
             self.text_fade = globals.t + self.text_fade_duration
@@ -2080,6 +2211,10 @@ class GameView(ui.RootElement):
     def mouse_button_up(self, pos, button):
         if self.paused:
             return super(GameView, self).mouse_button_up(pos, button)
+
+        # The tutorial disables the mouse buttons for a bit
+        if self.tutorial and self.tutorial.anchor_disabled:
+            return False, False
 
         if button == 1:
             if self.drone.grabbed:
