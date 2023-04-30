@@ -183,24 +183,27 @@ class Box(object):
     sprite_name = "resource/sprites/box.png"
     mass = 0.01
     density = 12 / 100000
-    is_package = True
+    is_package = False
     receive_time = 5000
+    collision_type = CollisionTypes.BOX
+    body_type = None
 
-    def __init__(self, parent, bl, tr, target):
+    def __init__(self, parent, bl, tr):
         self.parent = parent
-        self.id = target
         # bl, tr = (to_world_coords(x) for x in (bl, tr))
         self.quad = drawing.Quad(globals.quad_buffer)
         self.quad.set_vertices(bl, tr, box_level)
         self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
         self.quad.set_texture_coordinates(self.normal_tc)
-        self.collision_impulse = Point(0, 0)
 
         centre = self.quad.get_centre()
         vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
         # vertices = [vertices[2],vertices[3],vertices[0],vertices[1]]
         self.moment = pymunk.moment_for_poly(self.mass, vertices)
-        self.body = Body(moment=self.moment)
+        if self.body_type is None:
+            self.body = Body(moment=self.moment)
+        else:
+            self.body = Body(moment=self.moment, body_type=self.body_type)
         self.body.position = to_phys_coords(self.quad.get_centre().to_float())
         self.body.force = 0, 0
         self.body.torque = 0
@@ -212,13 +215,32 @@ class Box(object):
         self.shape.density = self.density
         self.shape.friction = 0.2
         self.shape.elasticity = 0.5
-        self.shape.collision_type = CollisionTypes.BOX
+        self.shape.collision_type = self.collision_type
         self.shape.parent = self
         globals.space.add(self.body, self.shape)
         self.in_world = True
-        # Our anchors are the top left and top right.
-        # TODO: These should actually be the two that are most upright (if it flips things go wrong)
-        # self.anchor_points = [point * 0.9 for point in self.shape.get_vertices()[2:]][::-1]
+
+    def update(self):
+        vertices = [0, 0, 0, 0]
+        for i, v in enumerate(self.shape.get_vertices()):
+            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
+
+        self.quad.set_all_vertices(vertices, box_level)
+
+    def delete(self):
+        self.quad.delete()
+        globals.space.remove(self.body, self.shape)
+        self.in_world = False
+
+
+class Package(Box):
+    is_package = True
+    collision_type = CollisionTypes.BOX
+
+    def __init__(self, parent, bl, tr, target):
+        super().__init__(parent, bl, tr)
+        self.id = target
+        self.collision_impulse = Point(0, 0)
         self.on_receiver = None
 
     def anchor_points(self):
@@ -248,40 +270,29 @@ class Box(object):
             self.on_receiver = globals.time
 
     def update(self):
-        vertices = [0, 0, 0, 0]
-        for i, v in enumerate(self.shape.get_vertices()):
-            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
-
-        self.quad.set_all_vertices(vertices, box_level)
+        super().update()
 
         if self.on_receiver is not None and globals.time - self.on_receiver > self.receive_time:
             self.on_receiver = None
             self.parent.package_delivered(self)
 
-    def delete(self):
-        self.quad.delete()
-        globals.space.remove(self.body, self.shape)
-        self.in_world = False
 
-
-class Receiver(object):
+class Receiver(Box):
     sprite_name = "resource/sprites/receiver.png"
     name_name = "resource/sprites/receiver_%d.png"
     mass = 0.01
     density = 12 / 100000
     is_package = False
+    collision_type = CollisionTypes.RECEIVER
+    body_type = pymunk.Body.STATIC
 
     def __init__(self, parent, pos, id):
-        self.parent = parent
-
         bl = Point(pos, 0)
         tr = bl + Point(40, 10)
-        # bl, tr = (to_world_coords(x) for x in (bl, tr))
+
+        super().__init__(parent, bl, tr)
+
         self.id = id
-        self.quad = drawing.Quad(globals.quad_buffer)
-        self.quad.set_vertices(bl, tr, box_level)
-        self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
-        self.quad.set_texture_coordinates(self.normal_tc)
 
         name_bl = bl - Point(0, 10)
         name_tr = name_bl + Point(40, 10)
@@ -291,93 +302,23 @@ class Receiver(object):
         self.name_tc = parent.atlas.texture_coords(self.name_name % self.id)
         self.name_quad.set_texture_coordinates(self.name_tc)
 
-        self.collision_impulse = Point(0, 0)
 
-        centre = self.quad.get_centre()
-        vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
-        # vertices = [vertices[2],vertices[3],vertices[0],vertices[1]]
-        self.moment = pymunk.moment_for_poly(self.mass, vertices)
-        self.body = Body(mass=self.mass, moment=self.moment, body_type=pymunk.Body.STATIC)
-        self.body.position = to_phys_coords(self.quad.get_centre().to_float())
-        self.body.force = 0, 0
-        self.body.torque = 0
-        self.body.velocity = 0, 0
-        self.body.angular_velocity = 0
-        # print(self.body.position,self.body.velocity)
-        # print(vertices)
-        self.shape = pymunk.Poly(self.body, vertices)
-        self.shape.density = self.density
-        self.shape.friction = 0.2
-        self.shape.elasticity = 0.5
-        self.shape.collision_type = CollisionTypes.RECEIVER
-        self.shape.parent = self
-        globals.space.add(self.body, self.shape)
-        self.in_world = True
-
-    def update(self):
-        vertices = [0, 0, 0, 0]
-        for i, v in enumerate(self.shape.get_vertices()):
-            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
-
-        self.quad.set_all_vertices(vertices, box_level)
-
-    def delete(self):
-        self.quad.delete()
-        globals.space.remove(self.body, self.shape)
-        self.in_world = False
-        self.name_quad.delete()
-
-
-class Fence(object):
-    sprite_name = "resource/sprites/fence.png"
+class StaticBox(Box):
     mass = 0.01
     density = 12 / 100000
     is_package = False
+    body_type = pymunk.Body.STATIC
+    size = None
 
     def __init__(self, parent, pos):
-        self.parent = parent
-        self.id = -1
         bl = Point(pos, 0)
-        tr = bl + Point(10, 120)
+        tr = bl + self.size
+        super().__init__(parent, bl, tr)
 
-        self.quad = drawing.Quad(globals.quad_buffer)
-        self.quad.set_vertices(bl, tr, box_level)
-        self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
-        self.quad.set_texture_coordinates(self.normal_tc)
 
-        centre = self.quad.get_centre()
-        vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
-        # vertices = [vertices[2],vertices[3],vertices[0],vertices[1]]
-        self.moment = pymunk.moment_for_poly(self.mass, vertices)
-        self.body = Body(mass=self.mass, moment=self.moment, body_type=pymunk.Body.STATIC)
-        self.body.position = to_phys_coords(self.quad.get_centre().to_float())
-        self.body.force = 0, 0
-        self.body.torque = 0
-        self.body.velocity = 0, 0
-        self.body.angular_velocity = 0
-        # print(self.body.position,self.body.velocity)
-        # print(vertices)
-        self.shape = pymunk.Poly(self.body, vertices)
-        self.shape.density = self.density
-        self.shape.friction = 0.2
-        self.shape.elasticity = 0.5
-        self.shape.collision_type = CollisionTypes.RECEIVER
-        self.shape.parent = self
-        globals.space.add(self.body, self.shape)
-        self.in_world = True
-
-    def update(self):
-        vertices = [0, 0, 0, 0]
-        for i, v in enumerate(self.shape.get_vertices()):
-            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
-
-        self.quad.set_all_vertices(vertices, box_level)
-
-    def delete(self):
-        self.quad.delete()
-        globals.space.remove(self.body, self.shape)
-        self.in_world = False
-        self.name_quad.delete()
+class Fence(StaticBox):
+    sprite_name = "resource/sprites/fence.png"
+    size = Point(8, 120)
 
 
 class Ground(object):
@@ -1416,7 +1357,7 @@ class GameView(ui.RootElement):
 
         bl = Point(50 + offset + random.randint(-20, 20), 0)
 
-        package = Box(self, bl, bl + size, target=target)
+        package = Package(self, bl, bl + size, target=target)
         # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
         package.update()
         # jim += 1
