@@ -476,6 +476,8 @@ class Drone(object):
     max_desired = 20
     min_desired = 3
     grab_range = 20
+    power_consumption = 0.01
+    power_max = 100
 
     def __init__(self, parent, pos):
         self.parent = parent
@@ -488,6 +490,7 @@ class Drone(object):
         self.top_right = pos + self.size
         self.turning_enabled = True
         self.grabbed = None
+        self.power = 100
 
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
@@ -620,6 +623,11 @@ class Drone(object):
         self.desired_quad.set_vertices(
             self.desired_pos - Point(4, 4), self.desired_pos + Point(4, 4), drone_level + 1
         )
+
+        # pay for our fuel
+        fuel = Point(*self.force).length() * (elapsed / 1000)
+        self.add_power(-fuel * self.power_consumption)
+
         self.reset_forces()
 
         if not self.turning_enabled and self.body.position[1] > 100:
@@ -634,14 +642,24 @@ class Drone(object):
                     from_phys_coords(self.grabbed.body.local_to_world(item_anchor)),
                 )
 
+    def add_power(self, amount):
+        self.power += amount
+        if self.power <= 0:
+            self.power = 0
+            self.engine = False
+        if self.power > self.power_max:
+            self.power = self.power_max
+        self.parent.top_bar.power_bar.set_bar_level(self.power / self.power_max)
+
     def calculate_forces(self):
         if not self.engine:
             self.forces = ((0, 0), (0, 0))
+            self.force = (0, 0)
             return
 
         mass = self.body.mass
         anti_grav = -globals.space.gravity * mass * 0.5
-        if self.grabbed:
+        if 0 and self.grabbed:
             # We also have to work out the gravity on the grabbed object
             anti_grabbed = -globals.space.gravity * self.grabbed.body.mass * 0.5
             try:
@@ -683,8 +701,8 @@ class Drone(object):
         # For the real forces we're going to simply apply two orthoganal forces to the centre of the object to simulate things
         # First the gravity force
         anti_grav *= 2
-        force = (0, (anti_grav + desired)[1])
-        self.force = (desired[0], (anti_grav + desired)[1])
+        grab_factor = 5 if not self.grabbed else 10
+        self.force = (desired[0], (anti_grav + desired * grab_factor)[1])
 
     def reset_forces(self):
         self.forces = None
@@ -734,6 +752,8 @@ class Drone(object):
     def key_up(self, key):
         if key == pygame.locals.K_SPACE:
             self.engine = not self.engine
+            if self.power == 0 and self.engine:
+                self.engine = False
         try:
             direction = self.key_map[key]
         except KeyError:
@@ -1012,7 +1032,7 @@ class LevelZero(Level):
     name = "Introduction"
     subtext = "idk lol"
     start_pos = Point(100 + offset, 50)
-    items = [(Point(20, 20), 0), (Point(40, 40), 1), (Point(50, 10), 2), (Point(50, 50), 3)]
+    items = [(Point(40, 40), 0), (Point(40, 40), 1), (Point(50, 10), 2), (Point(50, 50), 3)]
     receivers = [600 + i * 500 for i in range(10)]
     fences = [400]
     min_distance = 200
@@ -1181,14 +1201,39 @@ class GameView(ui.RootElement):
         self.light = drawing.Quad(globals.light_quads)
         self.light.set_vertices(self.ground.bottom_left, self.ground.ceiling_right, 0)
 
+        self.top_bar = ui.Box(
+            parent=globals.screen_root, pos=Point(0, 0.9), tr=Point(1, 1), colour=(0.5, 0.5, 0.5, 0.7)
+        )
+
         self.next_package_text = ui.TextBox(
-            self,
-            Point(0.7, 0.9),
+            self.top_bar,
+            Point(0.7, 0),
             Point(1, 1),
             self.next_package_format.format(number=1),
             2,
             colour=drawing.constants.colours.green,
             alignment=drawing.texture.TextAlignments.LEFT,
+        )
+        self.top_bar.power_bar = ui.PowerBar(
+            self.top_bar,
+            pos=Point(0.01, 0.4),
+            tr=Point(0.12, 1),
+            level=1,
+            bar_colours=(
+                drawing.constants.colours.red,
+                drawing.constants.colours.yellow,
+                drawing.constants.colours.white,
+            ),
+            border_colour=drawing.constants.colours.white,
+        )
+        self.top_bar.power_bar.text = ui.TextBox(
+            self.top_bar.power_bar,
+            Point(0, -0.4),
+            Point(1, 0),
+            "Power",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
         )
         self.next_package_text
 
@@ -1225,8 +1270,8 @@ class GameView(ui.RootElement):
         self.current_level = 0
 
         # Skip the main menu for now
-        self.main_menu.disable()
-        self.main_menu.start_level(0, 0)
+        # self.main_menu.disable()
+        # self.main_menu.start_level(0, 0)
 
         # self.rotating = None
         # self.rotating_pos = None
@@ -1382,6 +1427,8 @@ class GameView(ui.RootElement):
     def package_delivered(self, delivered_package):
         print("Package delivered!")
         self.packages = [package for package in self.packages if package is not delivered_package]
+        if self.drone and self.drone.grabbed is delivered_package:
+            self.drone.release()
         delivered_package.delete()
 
         level = self.levels[self.current_level]

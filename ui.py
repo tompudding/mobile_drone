@@ -461,6 +461,55 @@ class HoverableElement(UIElement):
         super(HoverableElement, self).enable()
 
 
+class PowerBar(UIElement):
+    def __init__(self, parent, pos, tr, level, bar_colours, border_colour):
+        super(PowerBar, self).__init__(parent, pos, tr)
+        self.low_power_colour = bar_colours[0]
+        self.medium_power_colour = bar_colours[1]
+        self.high_power_colour = bar_colours[2]
+        self.border = drawing.QuadBorder(globals.ui_buffer, line_width=1)
+        self.border_colour = border_colour
+        self.border.set_colour(self.border_colour)
+        self.quad = drawing.Quad(globals.ui_buffer)
+        self.power_level = level
+        self.update_position()
+        self.enable()
+
+    def update_position(self):
+        super(PowerBar, self).update_position()
+        self.set_bar_level(self.power_level)
+        self.border.set_vertices(self.absolute.bottom_left, self.absolute.top_right)
+
+    def set_bar_level(self, level):
+        self.power_level = level
+        if level < 0.3:
+            self.quad.set_colour(self.low_power_colour)
+        elif level < 0.7:
+            self.quad.set_colour(self.medium_power_colour)
+        else:
+            self.quad.set_colour(self.high_power_colour)
+        size = self.absolute.top_right - self.absolute.bottom_left
+        tr = self.absolute.bottom_left + size * Point(self.power_level, 1)
+        self.quad.set_vertices(self.absolute.bottom_left, tr, drawing.constants.DrawLevels.ui)
+
+    def delete(self):
+        super(power_bar, self).delete()
+        self.quad.delete()
+        self.border.delete()
+
+    def disable(self):
+        if self.enabled:
+            self.quad.disable()
+            self.border.disable()
+        super(PowerBar, self).disable()
+
+    def enable(self):
+        if not self.enabled:
+            self.quad.enable()
+            self.border.enable()
+        super(PowerBar, self).enable()
+
+
 class Box(UIElement):
     """A coloured box. Pretty boring!"""
 
