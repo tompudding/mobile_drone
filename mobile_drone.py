@@ -64,54 +64,6 @@ def init():
     globals.mouse_light_quad = drawing.Quad(globals.temp_mouse_light)
     globals.mouse_world = Point(0, 0)
 
-    # Put lines around the screen
-    # bottom = Segment(
-    #     globals.space.static_body,
-    #     globals.screen_root.absolute.bottom_left,
-    #     globals.screen_root.absolute.bottom_right,
-    #     0.0,
-    # )
-    # # bottom.sensor = True
-    # bottom.collision_type = game.CollisionTypes.BOTTOM
-    # static_lines = [bottom]
-
-    # # left hand side
-    # static_lines.append(
-    #     Segment(
-    #         globals.space.static_body,
-    #         globals.screen_root.absolute.bottom_left,
-    #         globals.screen_root.absolute.top_left,
-    #         0.0,
-    #     )
-    # )
-    # # top
-    # static_lines.append(
-    #     Segment(
-    #         globals.space.static_body,
-    #         globals.screen_root.absolute.top_left,
-    #         globals.screen_root.absolute.top_right,
-    #         0.0,
-    #     )
-    # )
-    # # right
-    # static_lines.append(
-    #     Segment(
-    #         globals.space.static_body,
-    #         globals.screen_root.absolute.top_right,
-    #         globals.screen_root.absolute.bottom_right,
-    #         0.0,
-    #     )
-    # )
-    # for i, l in enumerate(static_lines):
-    #     l.friction = 1
-    #     l.elasticity = 0.95
-    #     if i == 0:
-    #         l.collision_type = game.CollisionTypes.BOTTOM
-    #     else:
-    #         l.collision_type = game.CollisionTypes.WALL
-
-    # globals.space.add(*static_lines)
-
     globals.screen.full_quad = drawing.Quad(globals.screen_quadbuffer)
     globals.screen.full_quad.set_vertices(Point(0, 0), globals.screen, 0.01)
     globals.ui_buffer = drawing.QuadBuffer(131072, ui=True)

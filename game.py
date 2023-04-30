@@ -974,7 +974,7 @@ class MainMenu(ui.HoverableBox):
     def __init__(self, parent, bl, tr):
         self.border = drawing.QuadBorder(globals.ui_buffer, line_width=self.line_width)
         self.level_buttons = []
-        self.ticks = []
+        self.high_scores = []
         super(MainMenu, self).__init__(parent, bl, tr, (0.05, 0.05, 0.05, 1))
         self.text = ui.TextBox(
             self,
@@ -1001,7 +1001,9 @@ class MainMenu(ui.HoverableBox):
         self.resume_button = ui.TextBoxButton(self, "Resume", Point(0.7, 0.1), size=2, callback=self.resume)
         self.resume_button.disable()
 
-        pos = Point(0.2, 0.7)
+        self.high_score_header = ui.TextBox(self, Point(0.65, 0.7), Point(0.9, 0.8), "High Score", scale=2)
+
+        pos = Point(0.2, 0.6)
         for i, level in enumerate(parent.levels):
             button = ui.TextBoxButton(
                 self,
@@ -1010,21 +1012,20 @@ class MainMenu(ui.HoverableBox):
                 size=2,
                 callback=call_with(self.start_level, i),
             )
-            # self.ticks.append(
-            #     ui.TextBox(
-            #         self,
-            #         pos - Point(0.05, 0.01),
-            #         tr=pos + Point(0.1, 0.04),
-            #         text="\x9a",
-            #         scale=3,
-            #         colour=(0, 1, 0, 1),
-            #     )
-            # )
-            # if not self.parent.done[i]:
-            #     self.ticks[i].disable()
+            self.level_buttons.append(button)
+            self.high_scores.append(
+                ui.TextBox(
+                    self,
+                    pos + Point(0.45, 0.00),
+                    tr=pos + Point(0.55, 0.05),
+                    text=" ",
+                    scale=2,
+                    colour=drawing.constants.colours.white,
+                    alignment=drawing.texture.TextAlignments.CENTRE,
+                )
+            )
 
             pos.y -= 0.1
-            self.level_buttons.append(button)
 
     def resume(self, pos):
         self.parent.unpause()
@@ -1044,19 +1045,21 @@ class MainMenu(ui.HoverableBox):
         for button in self.level_buttons:
             button.enable()
         super(MainMenu, self).enable()
-        for i, tick in enumerate(self.ticks):
-            if self.parent.done[i]:
-                tick.enable()
+        for i, score in enumerate(self.high_scores):
+            high_score = self.parent.high_scores[i]
+            if high_score:
+                score.set_text(f"{high_score}")
+                score.enable()
             else:
-                tick.disable()
+                score.disable()
 
     def disable(self):
         if self.enabled:
             self.root.remove_ui_element(self)
             self.border.disable()
         super(MainMenu, self).disable()
-        for tick in self.ticks:
-            tick.disable()
+        for score in self.high_scores:
+            score.disable()
 
 
 class GameOver(ui.HoverableBox):
@@ -1191,10 +1194,10 @@ class LevelOne(Level):
         PackageInfo(
             contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=30, fragility=4.0
         ),
-        PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
-        PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
+        # PackageInfo(contents="Things", size=Point(40, 40), target=1, max_speed=100, time=20),
+        # PackageInfo(contents="Wood", size=Point(50, 10), target=2, max_speed=50, density=6, time=20),
         # PackageInfo(contents="Lead Bars", size=Point(50, 10), target=2, max_speed=50, density=10, time=20),
-        PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+        # PackageInfo(contents="Feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
     ]
     receivers = [600 + i * 500 for i in range(5)]
     chargers = [20]
@@ -1550,6 +1553,7 @@ class GameView(ui.RootElement):
             LevelOne(),
             LevelTwo(),
         ]
+        self.high_scores = [0 for level in self.levels]
 
         self.main_menu = MainMenu(self, Point(0.2, 0.3), Point(0.8, 0.7))
 
@@ -1645,6 +1649,7 @@ class GameView(ui.RootElement):
 
     def init_level(self):
         self.score = 0
+        self.bottom_bar.score_num_text.set_text(f"{self.score}", colour=drawing.constants.colours.yellow)
         if self.level_text:
             self.level_text.delete()
 
@@ -1782,12 +1787,27 @@ class GameView(ui.RootElement):
 
         level = self.levels[self.current_level]
 
-        if len(level.items) == 0:
+        if len(self.level_items) == 0:
             if level.infinite:
                 info = level.get_random_package()
                 info.target = random.randint(0, len(self.receivers) - 1)
             else:
-                self.next_level()
+                if self.score > self.high_scores[self.current_level]:
+                    self.high_scores[self.current_level] = self.score
+
+                self.main_menu.enable()
+                self.main_menu.resume_button.disable()
+                self.start_pause()
+
+                globals.cursor.enable()
+                self.level_text.disable()
+                if self.sub_text:
+                    self.sub_text.disable()
+                if self.next_level_menu:
+                    self.next_level_menu.disable()
+                if self.game_over:
+                    self.game_over.disable()
+
                 return
         else:
             info = self.level_items.pop(0)
@@ -1844,6 +1864,11 @@ class GameView(ui.RootElement):
         if key == pygame.locals.K_ESCAPE:
             if self.main_menu.enabled:
                 return self.quit(0)
+
+            if self.levels[self.current_level].infinite:
+                if self.score > self.high_scores[self.current_level]:
+                    self.high_scores[self.current_level] = self.score
+
             self.main_menu.enable()
             self.start_pause()
 
