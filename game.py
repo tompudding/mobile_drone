@@ -503,7 +503,7 @@ class House(Box):
 
 
 class Mailbox(House):
-    sprite_name = "resource/sprites/mailbox.png"
+    sprite_template = "resource/sprites/mailbox_{num}.png"
     size = Point(32, 64)
     hack_factor = 0.99
 
@@ -511,6 +511,10 @@ class Mailbox(House):
         (Point(0, -16), Point(4, 32), 0),
         (Point(0, 8), Point(16, 8), 0),
     ]
+
+    def __init__(self, parent, box_num, pos, y=0):
+        self.sprite_name = self.sprite_template.format(num=box_num)
+        super().__init__(parent, pos, y)
 
 
 class Ground(object):
@@ -2232,7 +2236,7 @@ class GameView(ui.RootElement):
         for i, pos in enumerate(level.receivers):
             self.receivers.append(Receiver(self, pos, id=i))
             self.houses.append(House(self, pos + 50, 0))
-            self.houses.append(Mailbox(self, pos - 50, 0))
+            self.houses.append(Mailbox(self, i, pos - 50, 0))
 
         # Hack, put some fences up the left side
         for y in range(0, 1000, Fence.size.y):
