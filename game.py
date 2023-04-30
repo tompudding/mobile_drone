@@ -644,8 +644,58 @@ class ConeLight(object):
         self.refresh()
 
 
-class Grimp(ActorLight, ConeLight):
-    pass
+class Squirt(object):
+    sprite_name = f"resource/sprites/squirt.png"
+
+    def __init__(self, parent, start, vector, duration):
+        self.parent = parent
+        self.start_pos = start
+        self.vector = vector
+        self.duration = duration
+        self.start_time = globals.time
+        self.end_time = self.start_time + duration
+        tc = parent.atlas.texture_coords(self.sprite_name)
+        # Hack to avoid artifacts
+        x_low = min(vertex[0] for vertex in tc)
+        x_high = max(vertex[0] for vertex in tc)
+        y_low = min(vertex[1] for vertex in tc)
+        y_high = max(vertex[1] for vertex in tc)
+        for vertex in tc:
+            if vertex[0] == x_low:
+                vertex[0] *= 1.01
+            elif vertex[0] == x_high:
+                vertex[0] *= 0.99
+            if vertex[1] == y_low:
+                vertex[1] *= 1.01
+            elif vertex[1] == y_high:
+                vertex[1] *= 0.99
+
+        self.quad = drawing.Quad(globals.quad_buffer, tc=tc)
+
+    def update(self):
+        if globals.time > self.end_time:
+            self.quad.delete()
+            return False
+        partial = float(globals.time - self.start_time) / self.duration
+        vector = self.vector * partial
+        size = Point(32.0, 32.0) * partial
+        bl = self.start_pos + vector - (size * 0.5)
+
+        # If we're going to go beneath the side
+        if bl.y < 0:
+            if self.vector.x > 0:
+                bl.x -= bl.y
+            else:
+                bl.x += bl.y
+            bl.y = 0
+
+        tr = bl + size
+        self.quad.set_vertices(bl, tr, 20)
+        self.quad.set_colour((1, 1, 1, 1 - partial ** 2))
+        return True
+
+    def delete(self):
+        self.quad.Delete()
 
 
 class Drone(object):
@@ -675,6 +725,10 @@ class Drone(object):
     power_max = 100
     fps = 25
     frame_delta = 1000 / fps
+    min_squirt_distance = 30
+    squirt_distance = 80
+    max_squirters = 100
+    squirt_range = 0.6
 
     def __init__(self, parent, pos):
         self.parent = parent
@@ -693,6 +747,10 @@ class Drone(object):
         self.start_power = 0
         self.thrust = self.max_desired
         self.quad.set_texture_coordinates(self.tcs[0])
+        self.left_squirters = []
+        self.right_squirters = []
+        self.last_squirt = [0, 0]
+        self.squirt_delay = [0, 0]
 
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
@@ -810,6 +868,30 @@ class Drone(object):
             tc = self.tcs[tc]
             self.quad.set_texture_coordinates(tc)
 
+            # We also squirt air out
+
+            for i in range(2):
+                squirter_list = (self.left_squirters, self.right_squirters)[i]
+                jet = self.anchor_points[i]
+                last_squirt = self.last_squirt[i]
+                squirt_delay = self.squirt_delay[i]
+
+                if (
+                    len(squirter_list) < self.max_squirters
+                    and (globals.game_time - last_squirt) > squirt_delay
+                ):
+                    jet_world = from_phys_coords(self.body.local_to_world(jet))
+                    angle = self.body.angle - (math.pi * 0.5) + (random.random() - 0.5) * self.squirt_range
+                    distance = random.random() * self.squirt_distance + self.min_squirt_distance
+                    vector = cmath.rect(distance, angle)
+                    vector = Point(vector.real, vector.imag)
+                    start = Point(*jet_world)
+                    squirter_list.append(Squirt(self.parent, start, vector, 1000))
+                    self.last_squirt[i] = globals.game_time
+
+        self.left_squirters = [squirt for squirt in self.left_squirters if squirt.update() == True]
+        self.right_squirters = [squirt for squirt in self.right_squirters if squirt.update() == True]
+
         if self.on_ground is not None:
             on_ground_time = globals.game_time - self.on_ground
             if on_ground_time > 1000:
@@ -823,8 +905,15 @@ class Drone(object):
 
         if self.forces is not None:
             # Debug draw the lines
-            for force, jet, line in zip(self.forces, vertices[::3], self.jet_lines):
-                line.set(start=jet, end=jet - force)
+            # for force, jet, line in zip(self.forces, vertices[::3], self.jet_lines):
+            #    line.set(start=jet, end=jet - force)
+            # Instead of debug lines we'll set the rate of squirts
+            for i, force in enumerate(self.forces):
+                length = pymunk.Vec2d(*force).length
+                try:
+                    self.squirt_delay[i] = 200 / pymunk.Vec2d(*force).length
+                except ZeroDivisionError:
+                    self.squirt_delay[i] = 200
 
         self.quad.set_all_vertices(vertices, box_level)
 
