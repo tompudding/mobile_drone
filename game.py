@@ -402,7 +402,6 @@ class Fence(StaticBox):
 class House(Box):
     sprite_name = "resource/sprites/house.png"
     size = Point(192, 192)
-    hack_factor = 0.95
 
     mass = 0.01
     density = 12 / 100000
@@ -410,6 +409,12 @@ class House(Box):
     collision_type = CollisionTypes.WALL
     body_type = pymunk.Body.STATIC
     hack_factor = 0.99
+
+    parts = [
+        (Point(0, -60), Point(175, 81), 0),
+        (Point(-10, 50), Point(135, 8), math.pi * 0.25),
+        (Point(10, 50), Point(135, 8), -math.pi * 0.25),
+    ]
 
     def __init__(self, parent, pos, y=0):
         bl = Point(pos, y)
@@ -432,12 +437,7 @@ class House(Box):
         self.moments = []
         self.shapes = []
 
-        for pos, size, angle in (
-            (Point(0, -60), Point(175, 81), 0),
-            (Point(-10, 50), Point(135, 8), math.pi * 0.25),
-            (Point(10, 50), Point(135, 8), -math.pi * 0.25),
-        ):
-
+        for pos, size, angle in self.parts:
             bl = pos - size * 0.5
             tr = bl + size
 
@@ -485,6 +485,17 @@ class House(Box):
         for body, shape in zip(self.bodies, self.shapes):
             globals.space.remove(body, shape)
         self.in_world = False
+
+
+class Mailbox(House):
+    sprite_name = "resource/sprites/mailbox.png"
+    size = Point(32, 64)
+    hack_factor = 0.99
+
+    parts = [
+        (Point(0, -16), Point(4, 32), 0),
+        (Point(0, 8), Point(16, 8), 0),
+    ]
 
 
 class Ground(object):
@@ -2206,6 +2217,7 @@ class GameView(ui.RootElement):
         for i, pos in enumerate(level.receivers):
             self.receivers.append(Receiver(self, pos, id=i))
             self.houses.append(House(self, pos + 50, 0))
+            self.houses.append(Mailbox(self, pos - 50, 0))
 
         # Hack, put some fences up the left side
         for y in range(0, 1000, Fence.size.y):
