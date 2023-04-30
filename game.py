@@ -10,6 +10,7 @@ import traceback
 import random
 import enum
 import itertools
+from dataclasses import dataclass
 
 box_level = 7
 ground_level = 6
@@ -1069,12 +1070,27 @@ class Level(object):
     boxes_pos_fixed = False
 
 
+@dataclass
+class PackageInfo:
+    contents: str
+    size: Point
+    target: int
+    max_speed: int
+    time: float
+    density: float = 0.0
+
+
 class LevelZero(Level):
     text = "Deliver Stuff"
     name = "Introduction"
     subtext = "idk lol"
     start_pos = Point(100 + offset, 50)
-    items = [(Point(40, 40), 0, 10), (Point(40, 40), 1, 100), (Point(50, 10), 2, 50), (Point(50, 50), 3, 50)]
+    items = [
+        PackageInfo(contents="Glass", size=Point(40, 40), target=0, density=0.5, max_speed=10, time=3),
+        PackageInfo(contents="things", size=Point(40, 40), target=1, max_speed=100, time=20),
+        PackageInfo(contents="wood", size=Point(50, 10), target=2, max_speed=50, density=2, time=20),
+        PackageInfo(contents="feathers", size=Point(50, 50), target=3, max_speed=100, density=0.1, time=15),
+    ]
     receivers = [600 + i * 500 for i in range(10)]
     chargers = [20]
     fences = [400]
@@ -1229,7 +1245,8 @@ class TimeOfDay(object):
 def format_time(t):
     seconds = t // 1000
     ms = t % 1000
-    return f"{seconds:4d}.{ms:03d}"
+    colour = drawing.constants.colours.white if t > 0 else drawing.constants.colours.red
+    return f"{seconds:4d}.{ms:03d}", colour
 
 
 class GameView(ui.RootElement):
@@ -1615,9 +1632,8 @@ class GameView(ui.RootElement):
         for pos in level.chargers:
             self.chargers.append(Charger(self, pos, id=0))
 
-        size, target, max_speed = level.items.pop(0)
-        print("PACKAGE with target", target)
-        self.create_package(size, target, max_speed)
+        package_info = level.items.pop(0)
+        self.create_package(package_info)
 
         # if self.ground:
         #    self.ground.delete()
@@ -1643,29 +1659,31 @@ class GameView(ui.RootElement):
         # else:
         #    self.cup.reset_line()
 
-    def create_package(self, size, target, max_speed):
-        print("PACKAGE with target", target)
-        self.package_start = globals.time
+    def create_package(self, info):
+        print("PACKAGE with target", info.target)
+        self.package_start = globals.time + (info.time * 1000)
         bl = Point(70 + offset + random.randint(-20, 20), 0)
 
-        package = Package(self, bl, bl + size, target=target, max_speed=max_speed)
+        package = Package(self, bl, bl + info.size, target=info.target, max_speed=info.max_speed)
         # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
         package.update()
         # jim += 1
         self.packages.append(package)
         self.help_text.set_text("Grab the next package")
 
-    def score_for_package(self, package):
-        score = package.max_damage - package.damage
+    def score_for_package(self, package, time):
+        score = max(package.max_damage - package.damage, 0)
 
-        if package.damage == 0:
+        score += max((5000 + time) / 20, 0)
+
+        if package.damage == 0 and time > 0:
             score *= 2
 
         return int(score * 10)
 
     def package_delivered(self, delivered_package):
         print("Package delivered!")
-        self.score += self.score_for_package(delivered_package)
+        self.score += self.score_for_package(delivered_package, self.package_start - globals.time)
         self.bottom_bar.score_num_text.set_text(f"{self.score}", colour=drawing.constants.colours.yellow)
         self.packages = [package for package in self.packages if package is not delivered_package]
         if self.drone and self.drone.grabbed is delivered_package:
@@ -1680,8 +1698,8 @@ class GameView(ui.RootElement):
             self.end_game()
             return
 
-        size, target, max_speed = level.items.pop(0)
-        self.create_package(size, target, max_speed)
+        info = level.items.pop(0)
+        self.create_package(info)
 
     def end_game(self):
         self.game_over = GameOver(self, Point(0.2, 0.2), Point(0.8, 0.8))
@@ -1736,8 +1754,8 @@ class GameView(ui.RootElement):
             for i in range(100)
         ]
 
-        size, target, max_speed = level.items.pop(0)
-        self.create_package(size, target, max_speed)
+        info = level.items.pop(0)
+        self.create_package(info)
 
     def next_level(self):
         self.stop_throw()
@@ -1806,7 +1824,8 @@ class GameView(ui.RootElement):
             return
 
         if self.package_start is not None:
-            self.bottom_bar.timer.set_text(format_time(globals.time - self.package_start))
+            text, colour = format_time(self.package_start - globals.time)
+            self.bottom_bar.timer.set_text(text, colour=colour)
 
         if self.text_fade == False and self.start_level and globals.t - self.start_level > 5000:
             self.text_fade = globals.t + self.text_fade_duration
