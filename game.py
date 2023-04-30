@@ -570,9 +570,7 @@ class Drone(object):
         self.anchors = []
         self.grabbed = None
         self.joints = []
-        self.parent.next_package_text.set_text(" ")
-        self.parent.help_text.set_text(" ")
-        self.parent.update_jostle(None)
+        self.parent.release(self)
 
     def enable_turning(self):
         self.turning_enabled = True
@@ -1228,6 +1226,12 @@ class TimeOfDay(object):
         self.speed = val
 
 
+def format_time(t):
+    seconds = t // 1000
+    ms = t % 1000
+    return f"{seconds:4d}.{ms:03d}"
+
+
 class GameView(ui.RootElement):
     text_fade_duration = 1000
     next_package_format = "Number {number}"
@@ -1279,6 +1283,16 @@ class GameView(ui.RootElement):
             Point(0.41 + 0.2, 0.28),
             "Package Time",
             2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
+        self.bottom_bar.timer = ui.TextBox(
+            self.bottom_bar,
+            Point(0.41, 0.3),
+            Point(0.41 + 0.2, 0.88),
+            " ",
+            3,
             colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.CENTRE,
         )
@@ -1463,6 +1477,12 @@ class GameView(ui.RootElement):
         # self.cup.disable()
         # self.ball.disable()
 
+    def release(self, package):
+        self.next_package_text.set_text(" ")
+        self.help_text.set_text(" ")
+        self.update_jostle(None)
+        # self.bottom_bar.timer.set_text(" ")
+
     def thrust_callback(self, index):
         if not self.drone:
             return
@@ -1541,6 +1561,7 @@ class GameView(ui.RootElement):
         self.bottom_bar.enable()
 
         self.start_level = globals.t
+        self.package_start = None
         level = self.levels[self.current_level]
         self.min_distance = level.min_distance
         self.level_text = ui.TextBox(
@@ -1624,7 +1645,7 @@ class GameView(ui.RootElement):
 
     def create_package(self, size, target, max_speed):
         print("PACKAGE with target", target)
-
+        self.package_start = globals.time
         bl = Point(70 + offset + random.randint(-20, 20), 0)
 
         package = Package(self, bl, bl + size, target=target, max_speed=max_speed)
@@ -1649,6 +1670,7 @@ class GameView(ui.RootElement):
         self.packages = [package for package in self.packages if package is not delivered_package]
         if self.drone and self.drone.grabbed is delivered_package:
             self.drone.release()
+        self.package_start = None
 
         delivered_package.delete()
 
@@ -1782,6 +1804,9 @@ class GameView(ui.RootElement):
             # self.main_menu.disable()
             # self.main_menu.start_level(0, 0)
             return
+
+        if self.package_start is not None:
+            self.bottom_bar.timer.set_text(format_time(globals.time - self.package_start))
 
         if self.text_fade == False and self.start_level and globals.t - self.start_level > 5000:
             self.text_fade = globals.t + self.text_fade_duration
@@ -1930,6 +1955,7 @@ class GameView(ui.RootElement):
                             continue
 
                         self.drone.grab(package)
+
                         self.next_package_text.set_text(
                             self.next_package_format.format(number=package.id + 1)
                         )
