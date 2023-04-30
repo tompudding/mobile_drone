@@ -237,6 +237,8 @@ class Box(object):
 class Package(Box):
     is_package = True
     collision_type = CollisionTypes.BOX
+    max_damage = 100
+    explosive = False
 
     def __init__(self, parent, bl, tr, target, max_speed):
         super().__init__(parent, bl, tr)
@@ -245,6 +247,17 @@ class Package(Box):
         self.collision_impulse = Point(0, 0)
         self.on_receiver = None
         self.last_update = None
+        self.damage = 0
+
+    def jostle(self, amount):
+        self.damage += amount
+        if self.damage > self.max_damage and self.explosive:
+            # TODO: Something for explosive boxes?
+            pass
+        self.parent.update_jostle(self)
+
+    def jostle_amount(self):
+        return min(self.damage / self.max_damage, 1)
 
     def anchor_points(self):
         orig_vertices = self.shape.get_vertices()
@@ -559,6 +572,7 @@ class Drone(object):
         self.joints = []
         self.parent.next_package_text.set_text(" ")
         self.parent.help_text.set_text(" ")
+        self.parent.update_jostle(None)
 
     def enable_turning(self):
         self.turning_enabled = True
@@ -596,6 +610,10 @@ class Drone(object):
             speed = min(self.grabbed.get_speed() / self.grabbed.max_speed, 1)
             # speed = min(self.grabbed.body.velocity.length / self.grabbed.max_speed, 1)
             self.parent.top_bar.max_speed_bar.set_bar_level(speed)
+
+            overspeed = self.grabbed.get_speed() - self.grabbed.max_speed
+            if overspeed > 0:
+                self.grabbed.jostle(overspeed * 5 * elapsed / 1000)
 
         if self.on_charger is not None:
             charge_time = globals.time - self.on_charger - 1000
@@ -1320,6 +1338,19 @@ class GameView(ui.RootElement):
             alignment=drawing.texture.TextAlignments.CENTRE,
         )
 
+        self.top_bar.jostle_bar = ui.PowerBar(
+            self.top_bar,
+            pos=Point(0.55, 0.4),
+            tr=Point(0.55 + 0.2, 0.9),
+            level=0,
+            bar_colours=(
+                drawing.constants.colours.blue,
+                drawing.constants.colours.yellow,
+                drawing.constants.colours.red,
+            ),
+            border_colour=drawing.constants.colours.red,
+        )
+
         self.top_bar.jostle_text = ui.TextBox(
             self.top_bar,
             Point(0.55, 0),
@@ -1641,8 +1672,8 @@ class GameView(ui.RootElement):
             for i in range(100)
         ]
 
-        size, target = level.items.pop(0)
-        self.create_package(size, target)
+        size, target, max_speed = level.items.pop(0)
+        self.create_package(size, target, max_speed)
 
     def next_level(self):
         self.stop_throw()
@@ -1860,6 +1891,8 @@ class GameView(ui.RootElement):
                         self.next_package_text.set_text(
                             self.next_package_format.format(number=package.id + 1)
                         )
+                        self.update_jostle(package)
+
                         self.help_text.set_text("Deliver the package")
                         break
 
@@ -1891,6 +1924,12 @@ class GameView(ui.RootElement):
         #     self.stop_throw()
 
         return False, False
+
+    def update_jostle(self, package):
+        if not package:
+            self.top_bar.jostle_bar.set_bar_level(0)
+            return
+        self.top_bar.jostle_bar.set_bar_level(package.jostle_amount())
 
     def apply_forces(self):
         if self.drone:
