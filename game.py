@@ -13,7 +13,8 @@ import itertools
 from dataclasses import dataclass
 
 box_level = 7
-ground_level = 3
+ground_level = 2
+squirt_level = 3
 house_level = 4
 drone_level = 8
 sf = 1
@@ -783,7 +784,7 @@ class Squirt(object):
             bl.y = 0
 
         tr = bl + size
-        self.quad.set_vertices(bl, tr, 6)
+        self.quad.set_vertices(bl, tr, squirt_level)
         self.quad.set_colour((1, 1, 1, 1 - partial ** 2))
         return True
 
