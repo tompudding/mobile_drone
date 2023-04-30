@@ -13,7 +13,8 @@ import itertools
 from dataclasses import dataclass
 
 box_level = 7
-ground_level = 4
+ground_level = 3
+house_level = 4
 drone_level = 8
 sf = 1
 debug_sprite_name = "resource/sprites/box.png"
@@ -192,6 +193,7 @@ class Box(object):
     receive_time = 5000
     collision_type = CollisionTypes.BOX
     body_type = None
+    hack_factor = 0.99
 
     def __init__(self, parent, bl, tr, density_factor=1):
         self.parent = parent
@@ -199,6 +201,7 @@ class Box(object):
         self.quad = drawing.Quad(globals.quad_buffer)
         self.quad.set_vertices(bl, tr, box_level)
         self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
+
         self.quad.set_texture_coordinates(self.normal_tc)
 
         centre = self.quad.get_centre()
@@ -393,6 +396,94 @@ class StaticBox(Box):
 class Fence(StaticBox):
     sprite_name = "resource/sprites/fence.png"
     size = Point(8, 120)
+
+
+class House(Box):
+    sprite_name = "resource/sprites/house.png"
+    size = Point(192, 192)
+    hack_factor = 0.95
+
+    mass = 0.01
+    density = 12 / 100000
+    is_package = False
+    collision_type = CollisionTypes.WALL
+    body_type = pymunk.Body.STATIC
+    hack_factor = 0.99
+
+    def __init__(self, parent, pos, y=0):
+        bl = Point(pos, y)
+        tr = bl + self.size
+        self.parent = parent
+        density_factor = 1
+        # bl, tr = (to_world_coords(x) for x in (bl, tr))
+        self.quad = drawing.Quad(globals.quad_buffer)
+        self.quad.set_vertices(bl, tr, house_level)
+        self.normal_tc = parent.atlas.texture_coords(self.sprite_name)
+        hack_fix_tc(self.normal_tc, 0.95)
+
+        self.quad.set_texture_coordinates(self.normal_tc)
+
+        centre = self.quad.get_centre()
+        vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
+        print(vertices)
+
+        self.bodies = []
+        self.moments = []
+        self.shapes = []
+
+        for pos, size, angle in (
+            (Point(0, -60), Point(175, 81), 0),
+            (Point(-10, 50), Point(135, 8), math.pi * 0.25),
+            (Point(10, 50), Point(135, 8), -math.pi * 0.25),
+        ):
+
+            bl = pos - size * 0.5
+            tr = bl + size
+
+            vertices = [
+                pymunk.Vec2d(bl.x, bl.y).rotated(angle),
+                pymunk.Vec2d(bl.x, tr.y).rotated(angle),
+                pymunk.Vec2d(tr.x, tr.y).rotated(angle),
+                pymunk.Vec2d(tr.x, bl.y).rotated(angle),
+            ]
+            # print(vertices)
+            # raise SystemExit()
+
+            moment = pymunk.moment_for_poly(self.mass, vertices)
+            if self.body_type is None:
+                body = Body(moment=moment)
+            else:
+                body = Body(moment=moment, body_type=self.body_type)
+            body.position = to_phys_coords(self.quad.get_centre().to_float())
+            body.force = 0, 0
+            body.torque = 0
+            body.velocity = 0, 0
+            body.angular_velocity = 0
+
+            shape = pymunk.Poly(body, vertices)
+            shape.density = self.density * density_factor
+            shape.friction = 0.2
+            shape.elasticity = 0.5
+            shape.collision_type = self.collision_type
+            shape.parent = self
+            globals.space.add(body, shape)
+            self.bodies.append(body)
+            self.shapes.append(shape)
+            self.moments.append(moment)
+        self.in_world = True
+
+    def update(self):
+        vertices = [0, 0, 0, 0]
+        for i, v in enumerate(self.shape.get_vertices()):
+            vertices[(4 - i) & 3] = from_phys_coords(v.rotated(self.body.angle) + self.body.position)
+
+        self.quad.set_all_vertices(vertices, box_level)
+
+    def delete(self):
+        self.quad.delete()
+        for body, shape in zip(self.bodies, self.shapes):
+            globals.space.remove(body, shape)
+        self.in_world = False
 
 
 class Ground(object):
@@ -643,6 +734,22 @@ class ConeLight(object):
         self.refresh()
 
 
+def hack_fix_tc(tc, hack_factor):
+    x_low = min(vertex[0] for vertex in tc)
+    x_high = max(vertex[0] for vertex in tc)
+    y_low = min(vertex[1] for vertex in tc)
+    y_high = max(vertex[1] for vertex in tc)
+    for vertex in tc:
+        if vertex[0] == x_low:
+            vertex[0] *= 1.01
+        elif vertex[0] == x_high:
+            vertex[0] *= 0.99
+        if vertex[1] == y_low:
+            vertex[1] *= 1.01
+        elif vertex[1] == y_high:
+            vertex[1] *= 0.99
+
+
 class Squirt(object):
     sprite_name = f"resource/sprites/squirt.png"
 
@@ -654,20 +761,7 @@ class Squirt(object):
         self.start_time = globals.time
         self.end_time = self.start_time + duration
         tc = parent.atlas.texture_coords(self.sprite_name)
-        # Hack to avoid artifacts
-        x_low = min(vertex[0] for vertex in tc)
-        x_high = max(vertex[0] for vertex in tc)
-        y_low = min(vertex[1] for vertex in tc)
-        y_high = max(vertex[1] for vertex in tc)
-        for vertex in tc:
-            if vertex[0] == x_low:
-                vertex[0] *= 1.01
-            elif vertex[0] == x_high:
-                vertex[0] *= 0.99
-            if vertex[1] == y_low:
-                vertex[1] *= 1.01
-            elif vertex[1] == y_high:
-                vertex[1] *= 0.99
+        hack_fix_tc(tc, 0.99)
 
         self.quad = drawing.Quad(globals.quad_buffer, tc=tc)
 
@@ -1907,6 +2001,7 @@ class GameView(ui.RootElement):
         self.drone = None
         self.packages = []
         self.receivers = []
+        self.houses = []
         self.fences = []
         self.chargers = []
         self.tutorial = None
@@ -2090,24 +2185,15 @@ class GameView(ui.RootElement):
             self.sub_text = None
         self.text_fade = False
 
-        for package in self.packages:
-            package.delete()
+        for item in itertools.chain(self.packages, self.receivers, self.houses, self.fences, self.chargers):
+            item.delete()
 
         self.packages = []
-
-        for receiver in self.receivers:
-            receiver.delete()
-
         self.receivers = []
-
-        for fence in self.fences:
-            fence.delete()
-
-        for charger in self.chargers:
-            charger.delete()
-
         self.fences = []
         self.chargers = []
+        self.houses = []
+
         if self.tutorial:
             self.tutorial.delete()
             self.tutorial = None
@@ -2118,6 +2204,7 @@ class GameView(ui.RootElement):
 
         for i, pos in enumerate(level.receivers):
             self.receivers.append(Receiver(self, pos, id=i))
+            self.houses.append(House(self, pos + 50, 0))
 
         # Hack, put some fences up the left side
         for y in range(0, 1000, Fence.size.y):
