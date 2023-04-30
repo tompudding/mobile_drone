@@ -43,6 +43,7 @@ class CollisionTypes:
     BOX = 3
     WALL = 4
     RECEIVER = 5
+    CHARGER = 6
 
 
 class Directions(enum.IntFlag):
@@ -251,7 +252,6 @@ class Package(Box):
 
         # We want the one that's most left and most up, and the one that's most right and most up
         vertices.sort(key=lambda x: -x[1][1])
-        print(vertices)
         output = [orig_vertices[vertices[0][0]], orig_vertices[vertices[1][0]]]
         output = [p * 0.8 for p in output]
 
@@ -301,6 +301,23 @@ class Receiver(Box):
         self.name_quad.set_vertices(name_bl, name_tr, box_level)
         self.name_tc = parent.atlas.texture_coords(self.name_name % self.id)
         self.name_quad.set_texture_coordinates(self.name_tc)
+
+
+class Charger(Box):
+    sprite_name = "resource/sprites/receiver.png"
+    mass = 0.01
+    density = 12 / 100000
+    is_package = False
+    collision_type = CollisionTypes.CHARGER
+    body_type = pymunk.Body.STATIC
+
+    def __init__(self, parent, pos, id):
+        bl = Point(pos, 0)
+        tr = bl + Point(40, 10)
+
+        super().__init__(parent, bl, tr)
+
+        self.id = id
 
 
 class StaticBox(Box):
@@ -432,6 +449,7 @@ class Drone(object):
         self.turning_enabled = True
         self.grabbed = None
         self.power = 100
+        self.on_ground = None
 
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
@@ -473,6 +491,7 @@ class Drone(object):
         self.reset_forces()
         self.target_rotation = 0
         self.engine = True
+        self.soft_off = False
         self.anchors = []
         # Our anchor points are our bottom left and our bottom right
 
@@ -532,6 +551,13 @@ class Drone(object):
         if self.last_update is None:
             self.last_update = globals.time
             return
+
+        if self.on_ground is not None:
+            on_ground_time = globals.time - self.on_ground
+            if on_ground_time > 1000:
+                self.engine = False
+                self.on_ground = None
+                self.soft_off = True
 
         vertices = [0, 0, 0, 0]
         for i, v in enumerate(self.shape.get_vertices()):
@@ -656,7 +682,12 @@ class Drone(object):
         if self.force is None:
             self.calculate_forces()
         if not self.engine:
-            return
+            # This might just be turned off for power saving reasons. If it's a soft_off and we're trying to move, turn it back on
+            if self.soft_off and self.desired_field != 0 and self.power > 0:
+                self.soft_off = False
+                self.engine = True
+            else:
+                return
 
         force = pymunk.Vec2d(*self.force).rotated(-self.body.angle)
         self.body.apply_force_at_local_point(force, (0, 0))
@@ -680,6 +711,20 @@ class Drone(object):
                 if not self.turning_enabled:
                     vector.x = 0
                 self.desired_vector += vector
+
+    def flying(self):
+        return self.desired_field != 0
+
+    def landed(self):
+        orig_vertices = self.shape.get_vertices()
+        vertices = [0, 0, 0, 0]
+        for i, v in enumerate(orig_vertices):
+            vertices[i] = v.rotated(self.body.angle) + self.body.position
+
+        # We want the one that's most left and most up, and the one that's most right and most up
+        vertices.sort(key=lambda x: x[1])
+
+        return all(vertex[1] < 12 for vertex in vertices[:2])
 
     def key_down(self, key):
         try:
@@ -1223,11 +1268,17 @@ class GameView(ui.RootElement):
         # self.ball.disable()
 
     def bottom_collision_start(self, arbiter, space, data):
-        # self.drone.disable_turning()
+        # If two vertices are *very* close to the floor, we can turn off the engine
+        # print(f"{self.drone.landed()}")
+        if self.drone.landed():
+            self.drone.on_ground = globals.time
+        # if self.drone.landed() and not self.drone.flying():
+        #    self.drone.engine = False
+
         return True
 
     def bottom_collision_end(self, arbiter, space, data):
-        # print("BCE")
+        self.drone.on_ground = None
         return True
 
     def receiver_start(self, arbiter, space, data):
