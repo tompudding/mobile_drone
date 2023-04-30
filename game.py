@@ -238,11 +238,13 @@ class Package(Box):
     is_package = True
     collision_type = CollisionTypes.BOX
 
-    def __init__(self, parent, bl, tr, target):
+    def __init__(self, parent, bl, tr, target, max_speed):
         super().__init__(parent, bl, tr)
         self.id = target
+        self.max_speed = max_speed
         self.collision_impulse = Point(0, 0)
         self.on_receiver = None
+        self.last_update = None
 
     def anchor_points(self):
         orig_vertices = self.shape.get_vertices()
@@ -269,7 +271,16 @@ class Package(Box):
         if self.on_receiver is None:
             self.on_receiver = globals.time
 
+    def get_speed(self):
+        # return self.body.velocity.length
+
+        return 1000 * ((self.body.velocity.length / 1000) ** 2)
+
     def update(self):
+        if self.last_update is None:
+            self.last_update = globals.time
+            return
+
         super().update()
 
         if self.on_receiver is not None and globals.time - self.on_receiver > self.receive_time:
@@ -449,10 +460,11 @@ class Drone(object):
         self.top_right = pos + self.size
         self.turning_enabled = True
         self.grabbed = None
-        self.power = 20
+        self.power = 100
         self.on_ground = None
         self.on_charger = None
         self.start_power = 0
+        self.thrust = self.max_desired
 
         self.quad.set_vertices(self.bottom_left, self.top_right, drone_level)
 
@@ -578,6 +590,13 @@ class Drone(object):
         elapsed = (globals.time - self.last_update) * globals.time_step
         self.last_update = globals.time
 
+        if self.grabbed:
+            # show the current package speed
+            # speed = min(self.grabbed.avg_speed() / self.grabbed.max_speed, 1)
+            speed = min(self.grabbed.get_speed() / self.grabbed.max_speed, 1)
+            # speed = min(self.grabbed.body.velocity.length / self.grabbed.max_speed, 1)
+            self.parent.top_bar.max_speed_bar.set_bar_level(speed)
+
         if self.on_charger is not None:
             charge_time = globals.time - self.on_charger - 1000
             if charge_time > 0:
@@ -595,8 +614,8 @@ class Drone(object):
 
         self.desired_shift += self.desired_vector * self.desired_speed * (elapsed / 1000)
         desired_length = self.desired_shift.length()
-        if self.desired_shift.length() > self.max_desired:
-            scale_factor = self.max_desired / desired_length
+        if self.desired_shift.length() > self.thrust:
+            scale_factor = self.thrust / desired_length
             self.desired_shift *= scale_factor
         self.desired_pos = from_phys_coords(self.body.position) + self.desired_shift
         self.desired_quad.set_vertices(
@@ -1039,7 +1058,7 @@ class LevelZero(Level):
     name = "Introduction"
     subtext = "idk lol"
     start_pos = Point(100 + offset, 50)
-    items = [(Point(40, 40), 0), (Point(40, 40), 1), (Point(50, 10), 2), (Point(50, 50), 3)]
+    items = [(Point(40, 40), 0, 10), (Point(40, 40), 1, 100), (Point(50, 10), 2, 50), (Point(50, 50), 3, 50)]
     receivers = [600 + i * 500 for i in range(10)]
     chargers = [20]
     fences = [400]
@@ -1210,8 +1229,31 @@ class GameView(ui.RootElement):
         self.light.set_vertices(self.ground.bottom_left, self.ground.ceiling_right, 0)
 
         self.top_bar = ui.Box(
-            parent=globals.screen_root, pos=Point(0, 0.9), tr=Point(1, 1), colour=(0.5, 0.5, 0.5, 0.7)
+            parent=globals.screen_root, pos=Point(0, 0.9), tr=Point(1, 1), colour=(0.2, 0.2, 0.2, 0.7)
         )
+        self.bottom_bar = ui.Box(
+            parent=globals.screen_root, pos=Point(0, 0), tr=Point(1, 0.07), colour=(0.2, 0.2, 0.2, 0.7)
+        )
+        self.thrust_points = [(offset, i) for i, offset in enumerate(range(4, 21))]
+        self.thrust_slider = ui.Slider(
+            self.bottom_bar,
+            Point(0.01, 0.3),
+            Point(0.3, 0.9),
+            self.thrust_points,
+            callback=self.thrust_callback,
+        )
+        self.thrust_slider.text = ui.TextBox(
+            self.bottom_bar,
+            Point(0.01, 0),
+            Point(0.3, 0.28),
+            "Thrust",
+            2,
+            colour=drawing.constants.colours.white,
+            alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+        self.thrust_slider.index = int(len(self.thrust_points) // 2)
+        self.thrust_slider.set_pointer()
+        self.thrust_slider.enable()
 
         self.help_text = ui.TextBox(
             self,
@@ -1253,6 +1295,19 @@ class GameView(ui.RootElement):
             2,
             colour=drawing.constants.colours.white,
             alignment=drawing.texture.TextAlignments.CENTRE,
+        )
+
+        self.top_bar.max_speed_bar = ui.PowerBar(
+            self.top_bar,
+            pos=Point(0.34, 0.4),
+            tr=Point(0.34 + 0.2, 0.9),
+            level=0,
+            bar_colours=(
+                drawing.constants.colours.blue,
+                drawing.constants.colours.yellow,
+                drawing.constants.colours.red,
+            ),
+            border_colour=drawing.constants.colours.blue,
         )
 
         self.top_bar.max_speed = ui.TextBox(
@@ -1343,6 +1398,12 @@ class GameView(ui.RootElement):
         # self.init_level()
         # self.cup.disable()
         # self.ball.disable()
+
+    def thrust_callback(self, index):
+        if not self.drone:
+            return
+        self.drone.thrust = self.thrust_points[index][0]
+        print(f"{self.drone.thrust=}")
 
     def bottom_collision_start(self, arbiter, space, data):
         # If two vertices are *very* close to the floor, we can turn off the engine
@@ -1465,9 +1526,9 @@ class GameView(ui.RootElement):
         for pos in level.chargers:
             self.chargers.append(Charger(self, pos, id=0))
 
-        size, target = level.items.pop(0)
+        size, target, max_speed = level.items.pop(0)
         print("PACKAGE with target", target)
-        self.create_package(size, target)
+        self.create_package(size, target, max_speed)
 
         # if self.ground:
         #    self.ground.delete()
@@ -1493,12 +1554,12 @@ class GameView(ui.RootElement):
         # else:
         #    self.cup.reset_line()
 
-    def create_package(self, size, target):
+    def create_package(self, size, target, max_speed):
         print("PACKAGE with target", target)
 
         bl = Point(70 + offset + random.randint(-20, 20), 0)
 
-        package = Package(self, bl, bl + size, target=target)
+        package = Package(self, bl, bl + size, target=target, max_speed=max_speed)
         # box.body.angle = [0.4702232572610111, -0.2761159031752114, 0.06794826568042156, -0.06845718620994479, 1.3234945990935332][jim]
         package.update()
         # jim += 1
@@ -1519,8 +1580,8 @@ class GameView(ui.RootElement):
             self.end_game()
             return
 
-        size, target = level.items.pop(0)
-        self.create_package(size, target)
+        size, target, max_speed = level.items.pop(0)
+        self.create_package(size, target, max_speed)
 
     def end_game(self):
         self.game_over = GameOver(self, Point(0.2, 0.2), Point(0.8, 0.8))
