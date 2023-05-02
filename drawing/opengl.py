@@ -660,6 +660,10 @@ def draw_all_now(quad_buffer, texture, shader):
     glDisableVertexAttribArray(shader.locations.colour_data)
 
 
+def draw_normally(quad_buffer, texture):
+    draw_all_now(quad_buffer, texture, default_shader)
+
+
 def draw_no_texture(quad_buffer):
     """
     Draw a quadbuffer with only vertex arrays and colour arrays. We need to make sure that

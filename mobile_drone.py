@@ -53,7 +53,7 @@ def init():
     globals.quad_buffer = drawing.QuadBuffer(131072)
     globals.light_quads = drawing.QuadBuffer(16384)
     globals.nightlight_quads = drawing.QuadBuffer(16)
-    globals.nonstatic_text_buffer = drawing.QuadBuffer(131072)
+    globals.nonstatic_text_buffer = drawing.QuadBuffer(131072, ui=True, mouse_relative=True)
     globals.screen_quadbuffer = drawing.QuadBuffer(16)
     globals.space = pymunk.Space()  # Create a Space which contain the simulation
     globals.space.gravity = (0.0, -300.0)
@@ -124,6 +124,7 @@ def main_run():
         drawing.end_frame()
         globals.screen_root.draw()
         globals.text_manager.draw()
+        globals.current_view.draw_no_lights()
         globals.cursor.draw()
 
         drawing.draw_ui()

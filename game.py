@@ -1439,7 +1439,8 @@ class MainMenu(ui.HoverableBox):
         self.border = drawing.QuadBorder(globals.ui_buffer, line_width=self.line_width)
         self.level_buttons = []
         self.high_scores = []
-        super(MainMenu, self).__init__(parent, bl, tr, (0.05, 0.05, 0.05, 1))
+        self.game = parent
+        super(MainMenu, self).__init__(globals.screen_root, bl, tr, (0.05, 0.05, 0.05, 1))
         self.text = ui.TextBox(
             self,
             Point(0, 0.8),
@@ -1461,7 +1462,7 @@ class MainMenu(ui.HoverableBox):
         self.border.set_colour(drawing.constants.colours.red)
         self.border.set_vertices(self.absolute.bottom_left, self.absolute.top_right)
         self.border.enable()
-        self.quit_button = ui.TextBoxButton(self, "Quit", Point(0.45, 0.1), size=2, callback=self.parent.quit)
+        self.quit_button = ui.TextBoxButton(self, "Quit", Point(0.45, 0.1), size=2, callback=self.game.quit)
         self.resume_button = ui.TextBoxButton(self, "Resume", Point(0.7, 0.1), size=2, callback=self.resume)
         self.resume_button.disable()
 
@@ -1492,15 +1493,15 @@ class MainMenu(ui.HoverableBox):
             pos.y -= 0.1
 
     def resume(self, pos):
-        self.parent.unpause()
+        self.game.unpause()
         self.disable()
 
     def start_level(self, pos, level):
         self.disable()
-        self.parent.current_level = level
-        self.parent.init_level()
+        self.game.current_level = level
+        self.game.init_level()
         # self.parent.stop_throw()
-        self.parent.unpause()
+        self.game.unpause()
 
     def enable(self):
         if not self.enabled:
@@ -1510,7 +1511,7 @@ class MainMenu(ui.HoverableBox):
             button.enable()
         super(MainMenu, self).enable()
         for i, score in enumerate(self.high_scores):
-            high_score = self.parent.high_scores[i]
+            high_score = self.game.high_scores[i]
             if high_score:
                 score.set_text(f"{high_score}")
                 score.enable()
@@ -1531,7 +1532,8 @@ class GameOver(ui.HoverableBox):
 
     def __init__(self, parent, bl, tr):
         self.border = drawing.QuadBorder(globals.ui_buffer, line_width=self.line_width)
-        super(GameOver, self).__init__(parent, bl, tr, (0, 0, 0, 1))
+        self.game = parent
+        super(GameOver, self).__init__(globals.screen_root, bl, tr, (0, 0, 0, 1))
         self.text = ui.TextBox(
             self,
             Point(0, 0.5),
@@ -1547,10 +1549,10 @@ class GameOver(ui.HoverableBox):
         self.replay_button = ui.TextBoxButton(
             self, "Keep Flying", Point(0.1, 0.1), size=2, callback=self.keep_flying
         )
-        self.quit_button = ui.TextBoxButton(self, "Quit", Point(0.7, 0.1), size=2, callback=parent.quit)
+        self.quit_button = ui.TextBoxButton(self, "Quit", Point(0.7, 0.1), size=2, callback=self.game.quit)
 
     def keep_flying(self, pos):
-        self.parent.keep_flying()
+        self.game.keep_flying()
         self.disable()
 
     def enable(self):
@@ -1778,7 +1780,7 @@ class Tutorial:
         self.parent = parent
         self.stage = 0
         self.text = ui.TextBox(
-            self.parent,
+            globals.screen_root,
             Point(0, 0.4),
             Point(1, 0.5),
             self.stages[self.stage],
@@ -1861,7 +1863,7 @@ class GameView(ui.RootElement):
     def __init__(self):
         # self.atlas = globals.atlas = drawing.texture.TextureAtlas('tiles_atlas_0.png','tiles_atlas.txt')
         # globals.ui_atlas = drawing.texture.TextureAtlas('ui_atlas_0.png','ui_atlas.txt',extra_names=False)
-        super(GameView, self).__init__(Point(0, 0), globals.screen)
+        super(GameView, self).__init__(Point(0, 0), Point(128 * 100, 1000))
         self.timeofday = TimeOfDay(0.5)
         self.viewpos = ViewPos(TutorialLevel.start_pos)
         self.mouse_pos = Point(0, 0)
@@ -1873,6 +1875,17 @@ class GameView(ui.RootElement):
         self.pause_start = None
         self.game_time_diff = 0
         self.current_info = None
+
+        # self.donkey = ui.TextBox(
+        #     self,
+        #     self.get_relative(Point(100, 100)),
+        #     self.get_relative(Point(250, 200)),
+        #     "DONKEY",
+        #     2,
+        #     colour=drawing.constants.colours.white,
+        #     textType=drawing.texture.TextTypes.GRID_RELATIVE,
+        #     alignment=drawing.texture.TextAlignments.CENTRE,
+        # )
 
         # For the ambient light
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
@@ -1953,7 +1966,7 @@ class GameView(ui.RootElement):
         )
 
         self.help_text = ui.TextBox(
-            self,
+            globals.screen_root,
             Point(0, 0),
             Point(1, 0.1),
             "Grab a package to start",
@@ -2245,7 +2258,7 @@ class GameView(ui.RootElement):
         level = self.levels[self.current_level]
         self.min_distance = level.min_distance
         self.level_text = ui.TextBox(
-            self,
+            globals.screen_root,
             Point(0, 0.5),
             Point(1, 0.6),
             level.text,
@@ -2255,7 +2268,7 @@ class GameView(ui.RootElement):
         )
         if level.subtext:
             self.sub_text = ui.TextBox(
-                self,
+                globals.screen_root,
                 Point(0, 0.4),
                 Point(1, 0.5),
                 level.subtext,
@@ -2613,6 +2626,12 @@ class GameView(ui.RootElement):
         drawing.scale(*globals.scale, 1)
         drawing.translate(*-(self.viewpos.pos), 0)
         drawing.draw_all(globals.quad_buffer, self.atlas.texture)
+
+    def draw_no_lights(self):
+        drawing.reset_state()
+        drawing.scale(*globals.scale, 1)
+        drawing.translate(*-(self.viewpos.pos), 0)
+        drawing.opengl.draw_all(globals.nonstatic_text_buffer, globals.text_manager.atlas.texture)
 
     def mouse_motion(self, pos, rel, handled):
         if self.paused:
