@@ -1,0 +1,1 @@
+resource/highlights/arrow.png:resource/highlights_atlas_0.png:0:1000.0:24:24

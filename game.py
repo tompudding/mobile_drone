@@ -1060,6 +1060,7 @@ class Drone(object):
         self.grabbed = item
         self.anchors = []
         self.joints = []
+        self.parent.arrow.point(item.id)
         for our_anchor, item_anchor in zip(self.anchor_points, item.anchor_points()):
             joint = pymunk.SlideJoint(
                 self.body, item.body, anchor_a=our_anchor, anchor_b=item_anchor, min=0, max=self.grab_range
@@ -1083,6 +1084,7 @@ class Drone(object):
     def release(self):
         if not self.grabbed:
             return
+        self.parent.arrow.disable()
         for joint in self.joints:
             globals.space.remove(joint)
         for anchor in self.anchors:
@@ -1923,6 +1925,62 @@ class Tutorial:
         self.text.disable()
 
 
+class Arrow:
+    sprite_name = "resource/highlights/arrow.png"
+
+    def __init__(self, parent):
+        self.parent = parent
+        self.quad = drawing.Quad(
+            parent.highlights_buffer, tc=parent.highlights_atlas.texture_coords(self.sprite_name)
+        )
+        self.size = parent.highlights_atlas.subimage(self.sprite_name).size
+        self.pos = Point(100, 100)
+        self.quad.set_vertices(self.pos, self.pos + self.size, 10)
+        centre = self.quad.get_centre()
+        self.vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
+        # self.arrow.disable()
+        self.target = None
+        self.enabled = False
+
+    def update(self):
+        if not self.enabled:
+            return
+
+        # Is the target on the screen? If so we can disable ourselves
+        screen_target = (self.target - self.parent.viewpos.pos) * globals.scale
+
+        if (
+            screen_target.x > 0
+            and screen_target.x < globals.screen_root.absolute.size.x
+            and screen_target.y > 0
+            and screen_target.y < globals.screen_root.absolute.size.y
+        ):
+            self.quad.disable()
+        else:
+            # We know we want to enable it, it wants to go at the edge of the screen rotated
+            diff = (pymunk.Vec2d(*self.target) - self.parent.drone.body.position).scale_to_length(100)
+            pos = self.parent.drone.body.position + diff
+            angle = diff.angle
+            print(angle)
+
+            vertices = [pymunk.Vec2d(*v).rotated(angle) + pos for v in self.vertices]
+            self.quad.set_all_vertices(vertices, 20)
+
+            self.quad.enable()
+
+    def point(self, id):
+        self.target = Point(*from_phys_coords(self.parent.receivers[id].body.position))
+        self.enable()
+
+    def disable(self):
+        self.enabled = False
+        self.quad.disable()
+
+    def enable(self):
+        self.enabled = True
+        self.quad.enable()
+
+
 class GameView(ui.RootElement):
     text_fade_duration = 1000
     next_package_format = "Number {number}"
@@ -1955,7 +2013,14 @@ class GameView(ui.RootElement):
         # )
 
         # For the ambient light
+        self.highlights_buffer = drawing.QuadBuffer(16384, ui=True, mouse_relative=True)
         self.atlas = drawing.texture.TextureAtlas("atlas_0.png", "atlas.txt")
+        self.highlights_atlas = drawing.texture.TextureAtlas(
+            "highlights_atlas_0.png", "highlights_atlas.txt", extra_names=False
+        )
+        self.arrow = Arrow(self)
+        self.arrow.disable()
+
         self.ground = Ground(self, TutorialLevel.ground_height)
         self.sky = Sky(self)
         self.light = drawing.Quad(globals.light_quads)
@@ -2313,6 +2378,7 @@ class GameView(ui.RootElement):
     def init_level(self):
         self.score = 0
         self.controls = True
+        self.arrow.disable()
         self.bottom_bar.score_num_text.set_text(f"{self.score}", colour=drawing.constants.colours.yellow)
         if self.level_text:
             self.level_text.delete()
@@ -2679,6 +2745,7 @@ class GameView(ui.RootElement):
         self.drone.update()
         for package in itertools.chain(self.packages, self.receivers):
             package.update()
+        self.arrow.update()
 
         # if self.thrown:
         #     diff = self.ball.body.position - self.last_ball_pos
@@ -2705,6 +2772,7 @@ class GameView(ui.RootElement):
         drawing.translate(*-(self.viewpos.pos), 0)
 
         drawing.opengl.draw_all(globals.nonstatic_text_buffer, globals.text_manager.atlas.texture)
+        drawing.opengl.draw_all(self.highlights_buffer, self.highlights_atlas.texture)
         drawing.line_width(4)
         drawing.opengl.draw_no_texture(globals.line_buffer_highlights)
 
