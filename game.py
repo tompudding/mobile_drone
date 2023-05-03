@@ -274,7 +274,20 @@ class Package(Box):
         self.on_receiver = None
         self.last_update = None
         self.damage = 0
+        self.highlights = [drawing.Line(globals.line_buffer_highlights) for i in range(4)]
+        for line in self.highlights:
+            line.set_colour((1, 1, 0, 1))
+            line.disable()
         # self.last_package_start = 0
+        self.highlighted = False
+
+    def set_highlight(self, value):
+        if self.highlighted == value:
+            return
+
+        self.highlighted = value
+        for line in self.highlights:
+            line.enable() if value else line.disable()
 
     def jostle(self, amount):
         self.damage += amount * self.fragility * 2
@@ -331,6 +344,15 @@ class Package(Box):
 
         super().update()
 
+        if self.highlighted:
+            orig_vertices = self.shape.get_vertices()
+            vertices = [0, 0, 0, 0]
+            for i, v in enumerate(orig_vertices):
+                vertices[i] = v.rotated(self.body.angle) + self.body.position
+
+            for i in range(len(vertices)):
+                self.highlights[i].set_vertices(vertices[i], vertices[(i + 1) % 4], 8)
+
         if self.on_receiver is not None:
             receive_time = globals.game_time - self.on_receiver
             if receive_time > self.receive_time:
@@ -343,6 +365,21 @@ class Package(Box):
             #    extra = receive_time - self.last_package_start
             #    self.last_package_start = receive_time
             #    self.parent.package_start += extra
+
+    def delete(self):
+        super().delete()
+        for line in self.highlights:
+            line.delete()
+
+    def enable(self):
+        super().enable
+        if self.highlighted:
+            for line in self.highlights:
+                line.enable()
+
+    def disable(self):
+        for line in self.highlights:
+            line.disable()
 
 
 class Receiver(Box):
@@ -964,6 +1001,7 @@ class Drone(object):
         vertices = [tuple(to_phys_coords(Point(*v[:2]) - centre)) for v in self.quad.vertex[:4]]
 
         self.mass = 0.08
+        self.highlighted = None
         self.moment = pymunk.moment_for_poly(self.mass, vertices)
         self.body = Body(mass=self.mass, moment=self.moment)
         self.body.position = to_phys_coords(self.quad.get_centre().to_float())
@@ -1166,6 +1204,24 @@ class Drone(object):
             overspeed = self.grabbed.get_speed() - self.grabbed.max_speed
             if overspeed > 0:
                 self.grabbed.jostle(overspeed * 5 * elapsed / 1000)
+        else:
+            # We can check all the extant packages to see if they need highlighting
+            self.highlighted = None
+            for package in self.parent.packages:
+                # It must be directly beneath us
+                diff = from_phys_coords(self.body.world_to_local(tuple(package.body.position)))
+                if abs(diff.x) < self.size.x * 0.5 and diff.y < 0:
+                    # We're pointed at it, but how close are we? We'll test the point that's from the drone's
+                    # centre and steps grab_distance toward the package
+                    diff = (package.body.position - self.body.position).scale_to_length(self.grab_range)
+                    point = diff + self.body.position
+
+                    info = package.shape.point_query(point)
+                    if info.distance < 0:
+                        self.highlighted = package
+                        break
+            for package in self.parent.packages:
+                package.set_highlight(True if package is self.highlighted else False)
 
         if self.on_charger is not None:
             charge_time = globals.game_time - self.on_charger - 1000
@@ -1348,6 +1404,18 @@ class Drone(object):
         try:
             direction = self.key_map[key]
         except KeyError:
+            if key in {pygame.locals.K_e}:
+                if self.highlighted:
+                    if not self.grabbed:
+                        self.grab(self.highlighted)
+                        self.highlighted.set_highlight(False)
+                        self.highlighted = None
+                elif self.grabbed:
+                    self.release()
+                else:
+                    # Could play a family fortunes sound here
+                    pass
+
             return
 
         self.desired_field |= direction
@@ -2631,7 +2699,10 @@ class GameView(ui.RootElement):
         drawing.reset_state()
         drawing.scale(*globals.scale, 1)
         drawing.translate(*-(self.viewpos.pos), 0)
+
         drawing.opengl.draw_all(globals.nonstatic_text_buffer, globals.text_manager.atlas.texture)
+        drawing.line_width(4)
+        drawing.opengl.draw_no_texture(globals.line_buffer_highlights)
 
     def mouse_motion(self, pos, rel, handled):
         if self.paused:
@@ -2727,35 +2798,35 @@ class GameView(ui.RootElement):
         if self.tutorial and self.tutorial.anchor_disabled:
             return False, False
 
-        if button == 1:
-            if self.drone.grabbed:
-                self.drone.release()
-            else:
-                info = self.drone.shape.point_query(tuple(to_phys_coords(globals.mouse_world)))
+        # if button == 1:
+        #     if self.drone.grabbed:
+        #         self.drone.release()
+        #     else:
+        #         info = self.drone.shape.point_query(tuple(to_phys_coords(globals.mouse_world)))
 
-                diff = from_phys_coords(
-                    self.drone.body.world_to_local(tuple(to_phys_coords(globals.mouse_world)))
-                )
+        #         diff = from_phys_coords(
+        #             self.drone.body.world_to_local(tuple(to_phys_coords(globals.mouse_world)))
+        #         )
 
-                if (
-                    abs(diff.x) < self.drone.size.x * 0.5
-                    and diff.y < 0
-                    and self.drone.in_grab_range(info.distance * phys_scale)
-                ):
-                    for package in self.packages:
-                        info = package.shape.point_query(tuple(to_phys_coords(globals.mouse_world)))
-                        if info.distance >= 0:
-                            continue
+        #         if (
+        #             abs(diff.x) < self.drone.size.x * 0.5
+        #             and diff.y < 0
+        #             and self.drone.in_grab_range(info.distance * phys_scale)
+        #         ):
+        #             for package in self.packages:
+        #                 info = package.shape.point_query(tuple(to_phys_coords(globals.mouse_world)))
+        #                 if info.distance >= 0:
+        #                     continue
 
-                        self.drone.grab(package)
+        #                 self.drone.grab(package)
 
-                        # self.next_package_text.set_text(
-                        #    self.next_package_format.format(number=package.id + 1)
-                        # )
-                        # self.update_jostle(package)
+        #                 # self.next_package_text.set_text(
+        #                 #    self.next_package_format.format(number=package.id + 1)
+        #                 # )
+        #                 # self.update_jostle(package)
 
-                        self.help_text.set_text("Deliver the package")
-                        break
+        #                 self.help_text.set_text("Deliver the package")
+        #                 break
 
         # if button == 1 and self.dragging:
         #     # release!
