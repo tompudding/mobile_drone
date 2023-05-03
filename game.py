@@ -154,7 +154,7 @@ class ViewPos(object):
 
         if self.follow:
             # We haven't locked onto it yet, so move closer, and lock on if it's below the threshold
-            fpos = from_phys_coords(self.follow.body.position) + globals.screen * Point(0, 0.03)
+            fpos = from_phys_coords(self.follow.body.position) - globals.screen * Point(0, 0.03)
             if not fpos:
                 return
             target = fpos - (globals.screen / globals.scale) * 0.5
@@ -1404,18 +1404,6 @@ class Drone(object):
         try:
             direction = self.key_map[key]
         except KeyError:
-            if key in {pygame.locals.K_e}:
-                if self.highlighted:
-                    if not self.grabbed:
-                        self.grab(self.highlighted)
-                        self.highlighted.set_highlight(False)
-                        self.highlighted = None
-                elif self.grabbed:
-                    self.release()
-                else:
-                    # Could play a family fortunes sound here
-                    pass
-
             return
 
         self.desired_field |= direction
@@ -1429,6 +1417,17 @@ class Drone(object):
         try:
             direction = self.key_map[key]
         except KeyError:
+            if key in {pygame.locals.K_e}:
+                if self.highlighted:
+                    if not self.grabbed:
+                        self.grab(self.highlighted)
+                        self.highlighted.set_highlight(False)
+                        self.highlighted = None
+                elif self.grabbed:
+                    self.release()
+                else:
+                    # Could play a family fortunes sound here
+                    pass
             return
 
         self.desired_field &= ~direction
@@ -2599,6 +2598,11 @@ class GameView(ui.RootElement):
         elif key in (pygame.locals.K_RSHIFT, pygame.locals.K_LSHIFT):
             # shifts count as the right button
             self.mouse_button_up(globals.mouse_screen, 3)
+
+        elif key in {pygame.locals.K_LEFTBRACKET}:
+            self.parent.thrust_slider.scroll(-1)
+        elif key in {pygame.locals.K_RIGHTBRACKET}:
+            self.parent.thrust_slider.scroll(1)
 
         if self.controls and self.drone:
             self.drone.key_up(key)
