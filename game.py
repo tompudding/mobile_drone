@@ -1215,7 +1215,9 @@ class Drone(object):
                 if abs(diff.x) < self.size.x * 0.5 and diff.y < 0:
                     # We're pointed at it, but how close are we? We'll test the point that's from the drone's
                     # centre and steps grab_distance toward the package
-                    diff = (package.body.position - self.body.position).scale_to_length(self.grab_range)
+                    diff = package.body.position - self.body.position
+                    if diff.length > self.grab_range:
+                        diff = diff.scale_to_length(self.grab_range)
                     point = diff + self.body.position
 
                     info = package.shape.point_query(point)
@@ -1961,7 +1963,6 @@ class Arrow:
             diff = (pymunk.Vec2d(*self.target) - self.parent.drone.body.position).scale_to_length(100)
             pos = self.parent.drone.body.position + diff
             angle = diff.angle
-            print(angle)
 
             vertices = [pymunk.Vec2d(*v).rotated(angle) + pos for v in self.vertices]
             self.quad.set_all_vertices(vertices, 20)
